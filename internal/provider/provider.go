@@ -112,6 +112,7 @@ func resolve(v types.String, envVar, attr string, resp *provider.ConfigureRespon
 func (p *geoserverProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewWorkspaceResource,
+		NewPostGISDataStoreResource,
 	}
 }
 

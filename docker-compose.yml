@@ -19,10 +19,9 @@ services:
       timeout: 5s
       retries: 30
 
-  # PostGIS for upcoming datastore resources. Not required by the provider yet.
+  # PostGIS backing the datastore acceptance tests; reachable from GeoServer as host "db".
   db:
     image: postgis/postgis:16-3.4
-    profiles: ["postgis"]
     environment:
       POSTGRES_USER: geouser
       POSTGRES_PASSWORD: geopassword
