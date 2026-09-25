@@ -1,15 +1,38 @@
-.PHONY: test test-integration test-integration-tc
+BINARY         := terraform-provider-geoserver
+GEOSERVER_PORT ?= 8080
 
-# Unit tests (rápidos, sin Docker)
+export GEOSERVER_PORT
+export GEOSERVER_URL      ?= http://localhost:$(GEOSERVER_PORT)/geoserver
+export GEOSERVER_USERNAME ?= admin
+export GEOSERVER_PASSWORD ?= geoserver
+
+.PHONY: build install fmt vet test testacc up down
+
+build:
+	go build -o $(BINARY) .
+
+# Installs into $GOBIN (or $GOPATH/bin) for use with a dev_overrides block.
+install:
+	go install .
+
+fmt:
+	gofmt -w .
+
+vet:
+	go vet ./...
+
+# Unit tests: fast, no Docker needed.
 test:
 	go test ./...
 
-# Integration tests contra GeoServer real vía docker-compose manual
-test-integration:
-	docker compose -f docker-compose.test.yml up -d --wait
-	go test -tags=integration ./internal/infrastructure/geoserver/... -v
-	docker compose -f docker-compose.test.yml down -v
+# Acceptance tests: starts GeoServer, runs real terraform plan/apply cycles
+# against it, and always tears it down, even when tests fail.
+testacc: up
+	TF_ACC=1 go test ./internal/provider/... -v -count=1 -timeout 30m; \
+		status=$$?; $(MAKE) down; exit $$status
 
-# Alternativa: integration tests vía testcontainers-go (no requiere el paso up/down de arriba)
-test-integration-tc:
-	go test -tags=integration ./internal/infrastructure/geoserver/... -v
+up:
+	docker compose up -d --wait geoserver
+
+down:
+	docker compose down -v

@@ -1,0 +1,42 @@
+# Local GeoServer for development and acceptance tests.
+# Ports can be overridden when the defaults are taken, e.g.
+#   GEOSERVER_PORT=18080 docker compose up -d --wait
+services:
+  geoserver:
+    image: docker.osgeo.org/geoserver:2.28.0
+    environment:
+      GEOSERVER_ADMIN_USER: admin
+      GEOSERVER_ADMIN_PASSWORD: geoserver
+      SKIP_DEMO_DATA: "true"
+    ports:
+      - "${GEOSERVER_PORT:-8080}:8080"
+    volumes:
+      - geoserver_data:/opt/geoserver_data
+    healthcheck:
+      # /web/ is public; /rest/ would answer 401 without credentials.
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/geoserver/web/"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # PostGIS for upcoming datastore resources. Not required by the provider yet.
+  db:
+    image: postgis/postgis:16-3.4
+    profiles: ["postgis"]
+    environment:
+      POSTGRES_USER: geouser
+      POSTGRES_PASSWORD: geopassword
+      POSTGRES_DB: geoform_dev
+    ports:
+      - "${POSTGIS_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geouser -d geoform_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  geoserver_data:
+  pgdata:
