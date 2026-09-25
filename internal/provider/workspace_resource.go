@@ -22,6 +22,9 @@ import (
 // A workspace name doubles as its namespace prefix, which must be an XML NCName.
 var workspaceNameRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
 
+// Store and layer names become REST path segments, so they cannot contain '/'.
+var noSlashRegexp = regexp.MustCompile(`^[^/]+$`)
+
 var (
 	_ resource.Resource                = (*workspaceResource)(nil)
 	_ resource.ResourceWithConfigure   = (*workspaceResource)(nil)

@@ -47,7 +47,7 @@ testacc: up
 		status=$$?; $(MAKE) down; exit $$status
 
 up:
-	docker compose up -d --wait geoserver
+	docker compose up -d --wait
 
 down:
 	docker compose down -v
