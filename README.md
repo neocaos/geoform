@@ -4,7 +4,8 @@ A Terraform provider for [GeoServer](https://geoserver.org): manage GeoServer
 configuration as code, with plans, state, drift detection and imports handled by
 Terraform.
 
-> Status: early development. Available: `geoserver_workspace`, `geoserver_postgis_datastore`.
+> Status: early development. Available: `geoserver_workspace`, `geoserver_postgis_datastore`,
+> `geoserver_featuretype`.
 
 ## Usage
 
@@ -75,6 +76,32 @@ Terraform are not detected, and after an import the next apply writes the
 configured password. Connection parameters this resource does not manage (pool
 sizes, "Expose primary keys", ...) are preserved on update. Destroy never
 deletes the store's layers; GeoServer refuses if any remain.
+
+**`geoserver_featuretype`**
+
+Publishes an existing table of a data store as a layer. GeoServer creates the
+matching layer automatically and computes the bounding boxes from the data.
+
+| Attribute           | Type   | Notes                                                                                   |
+|---------------------|--------|-----------------------------------------------------------------------------------------|
+| `workspace`         | string | Required. Changing it replaces the feature type.                                        |
+| `datastore`         | string | Required. Changing it replaces the feature type.                                        |
+| `name`              | string | Required. Published layer name. Changing it replaces the feature type.                  |
+| `native_name`       | string | Optional, default `name`. Table or view to publish. Changing it replaces the feature type. |
+| `title`             | string | Optional. GeoServer defaults it to the table name.                                      |
+| `abstract`          | string | Optional.                                                                               |
+| `srs`               | string | Optional, e.g. `EPSG:4326`. Defaults to the table's native CRS.                         |
+| `projection_policy` | string | Optional: `FORCE_DECLARED`, `REPROJECT_TO_DECLARED` or `NONE`. Chosen by GeoServer if unset. |
+| `enabled`           | bool   | Optional, default `true`.                                                               |
+| `id`                | string | Computed, `<workspace>/<datastore>/<name>`.                                             |
+
+Import with `terraform import geoserver_featuretype.roads acme/roads/roads`.
+
+Bounding boxes are recalculated when `srs` or `projection_policy` changes, and
+otherwise left alone. Unsetting `title`, `srs` or `projection_policy` keeps the
+current value rather than resetting it. Destroying a feature type also deletes
+its layer and removes it from any layer groups, since GeoServer cannot delete
+one without the other.
 
 More in [`examples/`](examples).
 

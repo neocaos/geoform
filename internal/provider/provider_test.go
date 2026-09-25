@@ -26,10 +26,14 @@ func TestProvider_Schema(t *testing.T) {
 	}
 }
 
-// testAccPreCheck skips nothing itself (the framework already requires
-// TF_ACC), but fails fast when the target GeoServer is not configured.
+// testAccPreCheck skips the test unless TF_ACC is set, and fails fast when
+// the target GeoServer is not configured. Tests that prepare fixtures before
+// resource.Test must call it first.
 func testAccPreCheck(t *testing.T) {
 	t.Helper()
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("acceptance tests skipped unless TF_ACC is set")
+	}
 	for _, env := range []string{envURL, envUsername, envPassword} {
 		if os.Getenv(env) == "" {
 			t.Fatalf("%s must be set for acceptance tests", env)

@@ -88,6 +88,16 @@ func TestAccPostGISDataStore_invalidImportID(t *testing.T) {
 }
 
 func testAccPostGISDataStoreConfig(ws, extra string) string {
+	return testAccPostGISDataStoreConfigWith(ws, "roads", extra)
+}
+
+// testAccPostGISDataStoreConfigNamed is a workspace plus a store called name,
+// for tests of resources that live inside a store.
+func testAccPostGISDataStoreConfigNamed(ws, name string) string {
+	return testAccPostGISDataStoreConfigWith(ws, name, "")
+}
+
+func testAccPostGISDataStoreConfigWith(ws, name, extra string) string {
 	host, database, user, password := testAccPostGIS()
 	return fmt.Sprintf(`
 resource "geoserver_workspace" "test" {
@@ -96,14 +106,14 @@ resource "geoserver_workspace" "test" {
 
 resource "geoserver_postgis_datastore" "test" {
   workspace = geoserver_workspace.test.name
-  name      = "roads"
+  name      = %q
   host      = %q
   database  = %q
   user      = %q
   password  = %q
   %s
 }
-`, ws, host, database, user, password, extra)
+`, ws, name, host, database, user, password, extra)
 }
 
 func testAccSetDataStoreParam(t *testing.T, ws, name, key, value string) {
