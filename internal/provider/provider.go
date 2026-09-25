@@ -113,6 +113,7 @@ func (p *geoserverProvider) Resources(_ context.Context) []func() resource.Resou
 	return []func() resource.Resource{
 		NewWorkspaceResource,
 		NewPostGISDataStoreResource,
+		NewFeatureTypeResource,
 	}
 }
 

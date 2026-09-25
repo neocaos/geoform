@@ -25,6 +25,9 @@ var workspaceNameRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
 // Store and layer names become REST path segments, so they cannot contain '/'.
 var noSlashRegexp = regexp.MustCompile(`^[^/]+$`)
 
+// A CRS identifier such as EPSG:4326 or CRS:84.
+var srsRegexp = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*:[A-Za-z0-9_.]+$`)
+
 var (
 	_ resource.Resource                = (*workspaceResource)(nil)
 	_ resource.ResourceWithConfigure   = (*workspaceResource)(nil)
