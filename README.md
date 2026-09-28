@@ -113,8 +113,14 @@ Requirements: Go (see `go.mod`), Terraform CLI, Docker.
 make build     # builds ./terraform-provider-geoserver
 make test      # unit tests, no Docker
 make testacc   # starts GeoServer in Docker, runs acceptance tests, tears it down
+make testacc-all # the same, against every supported GeoServer version
 make up / down # just start / stop local GeoServer (admin / geoserver) and PostGIS
 ```
+
+Tested against GeoServer **2.28.5, 2.25.7 and 2.24.5** (the official
+`docker.osgeo.org/geoserver` image), the most-used versions in public Docker
+setups. CI runs the acceptance tests on each; `make testacc` uses 2.28.5 unless
+`GEOSERVER_VERSION` is set, e.g. `GEOSERVER_VERSION=2.24.5 make testacc`.
 
 Set `GEOSERVER_PORT` / `POSTGIS_PORT` if 8080 / 5432 are taken, e.g.
 `GEOSERVER_PORT=18080 POSTGIS_PORT=15432 make testacc`.
