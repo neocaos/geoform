@@ -10,6 +10,7 @@ import (
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
 	"github.com/neocaos/geoform/internal/domain/workspace"
+	gs "github.com/neocaos/geoform/internal/geoserver"
 	"github.com/neocaos/geoform/internal/infrastructure/geoserver"
 )
 
@@ -24,7 +25,7 @@ func env(k, def string) string {
 
 func TestIntegration_PostGISPublishLifecycle(t *testing.T) {
 	ctx := context.Background()
-	client := geoserver.NewClient(
+	client := gs.NewClient(
 		env("GEOSERVER_URL", "http://localhost:18080/geoserver/rest"),
 		env("GEOSERVER_USER", "admin"),
 		env("GEOSERVER_PASS", "geoserver"),

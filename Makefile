@@ -5,10 +5,11 @@ COMPOSE_TEST  = docker compose -f docker-compose.test.yml
 
 # GeoServer versions the provider is tested against; keep in sync with CI.
 # The first one is the default for `make up` and `make testacc`.
-GEOSERVER_VERSIONS := 2.28.5 2.25.7 2.24.5
+GEOSERVER_VERSIONS := 2.28.5 2.25.4 2.24.4
 GEOSERVER_VERSION  ?= $(firstword $(GEOSERVER_VERSIONS))
 GEOSERVER_PORT     ?= 8080
-export GEOSERVER_PORT GEOSERVER_VERSION
+POSTGIS_PORT       ?= 5432
+export GEOSERVER_PORT POSTGIS_PORT GEOSERVER_VERSION
 
 build:
 	go build -o $(BINARY) .
@@ -40,7 +41,8 @@ test-integration:
 	$(COMPOSE_TEST) up -d --wait --wait-timeout 300 || { $(COMPOSE_TEST) logs --tail=50; $(COMPOSE_TEST) down -v; exit 1; }
 	go test -count=1 -tags=integration ./internal/... -v; rc=$$?; $(COMPOSE_TEST) down -v; exit $$rc
 
-# Terraform acceptance tests (docker-compose.yml): starts GeoServer, runs real
+# Terraform acceptance tests (docker-compose.yml, Kartoza GeoServer + seeded
+# PostGIS): starts the stack, runs real
 # terraform plan/apply cycles against it, and always tears it down, even when
 # tests fail. The GEOSERVER_* connection variables are set only for this
 # recipe so they do not leak into test-integration.
@@ -64,7 +66,7 @@ testacc-all:
 	echo "PASSED on GeoServer: $(GEOSERVER_VERSIONS)"
 
 up:
-	docker compose up -d --wait
+	docker compose up -d --wait --wait-timeout 300
 
 down:
 	docker compose down -v
