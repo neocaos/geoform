@@ -1,0 +1,44 @@
+# Stack efímero para integration tests (sin volúmenes; `down -v` lo limpia).
+# Puertos del host distintos a los de dev para poder tener ambos levantados.
+name: geoform-test
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: geouser
+      POSTGRES_PASSWORD: geopassword
+      POSTGRES_DB: geoform
+    ports:
+      - "15432:5432"
+    volumes:
+      - ./test/testdata/postgis/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geouser -d geoform && psql -U geouser -d geoform -tc \"select 1 from information_schema.tables where table_schema='geodata' and table_name='regions'\" | grep -q 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    networks: [geoform]
+
+  geoserver:
+    image: kartoza/geoserver:2.28.5
+    environment:
+      GEOSERVER_ADMIN_USER: admin
+      GEOSERVER_ADMIN_PASSWORD: geoserver
+      INSTALL_EXTENSIONS: "false"
+      SAMPLE_DATA: "false"
+    ports:
+      - "18080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u admin:geoserver http://localhost:8080/geoserver/rest/about/version.json >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    networks: [geoform]
+
+networks:
+  geoform:

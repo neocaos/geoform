@@ -1,65 +1,52 @@
-version: '3.8'
+# Stack de desarrollo: GeoServer (Kartoza) + PostGIS con datos de ejemplo.
+#   docker compose -f docker-compose.dev.yml up -d --wait
+# GeoServer: http://localhost:8080/geoserver  (admin / geoserver)
+# PostGIS:   localhost:5432  (geouser / geopassword, db geoform)
+name: geoform-dev
 
 services:
-  # 1. Base de datos geoespacial
   db:
-    image: postgis/postgis:15-3.3
-    container_name: geoform-db
+    image: postgis/postgis:16-3.4
     environment:
       POSTGRES_USER: geouser
       POSTGRES_PASSWORD: geopassword
-      POSTGRES_DB: geoform_dev
+      POSTGRES_DB: geoform
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./test/testdata/postgis/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U geouser -d geoform_dev"]
+      test: ["CMD-SHELL", "pg_isready -U geouser -d geoform"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+    networks: [geoform]
 
-  # 2. El servidor de mapas que GeoForm va a "terraformar"
   geoserver:
-    image: docker.osgeo.org/geoserver:2.24.x # Usa la versión estable que prefieras
-    container_name: geoform-geoserver
+    image: kartoza/geoserver:2.28.5
     environment:
-      - GEOSERVER_ADMIN_PASSWORD=geoserver
-      - SKIP_DEMO_DATA=true
+      GEOSERVER_ADMIN_USER: admin
+      GEOSERVER_ADMIN_PASSWORD: geoserver
+      INSTALL_EXTENSIONS: "false"
+      SAMPLE_DATA: "false"
     ports:
       - "8080:8080"
     volumes:
-      - geoserver_data:/opt/geoserver_data
+      - geoserver_data:/opt/geoserver/data_dir
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/geoserver/rest/workspaces.json"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
+      test: ["CMD-SHELL", "curl -fsS -u admin:geoserver http://localhost:8080/geoserver/rest/about/version.json >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    networks: [geoform]
 
-  # 3. Tu aplicación en Go (Entorno de desarrollo con Live Reload opcional)
-  app:
-    image: golang:1.22-alpine
-    container_name: geoform-app
-    volumes:
-      - .:/app
-    working_dir: /app
-    environment:
-      - GEOSERVER_URL=http://geoserver:8080/geoserver
-      - GEOSERVER_USER=admin
-      - GEOSERVER_PASS=geoserver
-      - DATABASE_URL=postgres://geouser:geopassword@db:5432/geoform_dev?sslmode=disable
-    ports:
-      - "8000:8000" # Por si en el futuro expones una API HTTP además de la CLI
-    stdin_open: true # Mantiene el contenedor interactivo para la CLI
-    tty: true
-    depends_on:
-      geoserver:
-        condition: service_healthy
-    # Comando por defecto: se queda en espera para que tú entres y lances "go test" o "go run"
-    command: sh -c "go mod download && tail -f /dev/null"
+networks:
+  geoform:
 
 volumes:
   pgdata:
