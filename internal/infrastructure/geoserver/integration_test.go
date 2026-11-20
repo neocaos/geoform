@@ -7,10 +7,10 @@ import (
 	"os"
 	"testing"
 
-	"geoform/internal/domain/datastore"
-	"geoform/internal/domain/layer"
-	"geoform/internal/domain/workspace"
-	"geoform/internal/infrastructure/geoserver"
+	"github.com/neocaos/geoform/internal/domain/datastore"
+	"github.com/neocaos/geoform/internal/domain/layer"
+	"github.com/neocaos/geoform/internal/domain/workspace"
+	"github.com/neocaos/geoform/internal/infrastructure/geoserver"
 )
 
 // Requiere el stack de docker-compose.test.yml levantado (make test-integration).

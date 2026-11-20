@@ -146,9 +146,6 @@ internal/provider/      Terraform provider, resources and acceptance tests
 examples/               example configurations
 ```
 
-## License
-
-See [LICENSE](LICENSE).
 
 ## Stack de desarrollo (Kartoza + PostGIS)
 
@@ -177,3 +174,7 @@ Los tests de integración crean un workspace, un datastore PostGIS y publican la
 capas (todo vía `Ensure`, ejecutado dos veces para comprobar idempotencia), verifican por REST y limpian.
 Se pueden apuntar a otro GeoServer con `GEOSERVER_URL` (por defecto `http://localhost:18080/geoserver/rest`),
 `GEOSERVER_USER` y `GEOSERVER_PASS`. `make stack-up` / `make stack-down` levantan/borran el stack de tests a mano.
+
+## License
+
+See [LICENSE](LICENSE).
