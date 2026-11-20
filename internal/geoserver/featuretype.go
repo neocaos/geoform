@@ -87,3 +87,14 @@ func (c *Client) DeleteFeatureType(ctx context.Context, workspace, store, name s
 	}
 	return c.do(ctx, http.MethodDelete, path, nil, nil, http.StatusOK)
 }
+
+// LayerExists reports whether "workspace:name" exists as a published layer
+// (the /layers endpoint, independent of the feature type).
+func (c *Client) LayerExists(ctx context.Context, workspace, name string) (bool, error) {
+	path := "/layers/" + url.PathEscape(workspace) + ":" + url.PathEscape(name) + ".json?quietOnNotFound=true"
+	err := c.do(ctx, http.MethodGet, path, nil, nil, http.StatusOK)
+	if IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
+}

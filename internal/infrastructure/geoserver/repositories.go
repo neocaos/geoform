@@ -1,3 +1,5 @@
+// Package geoserver adapts the GeoServer REST client (internal/geoserver) to
+// the domain repositories.
 package geoserver
 
 import (
@@ -7,63 +9,60 @@ import (
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
 	"github.com/neocaos/geoform/internal/domain/workspace"
+	gs "github.com/neocaos/geoform/internal/geoserver"
 )
 
 // WorkspaceRepository adapta Client a workspace.Repository.
-type WorkspaceRepository struct{ c *Client }
+type WorkspaceRepository struct{ c *gs.Client }
 
-func NewWorkspaceRepository(c *Client) *WorkspaceRepository { return &WorkspaceRepository{c} }
+func NewWorkspaceRepository(c *gs.Client) *WorkspaceRepository { return &WorkspaceRepository{c} }
 
 func (r *WorkspaceRepository) Get(ctx context.Context, name string) (*workspace.Workspace, error) {
 	ws, err := r.c.GetWorkspace(ctx, name)
-	if IsNotFound(err) {
+	if gs.IsNotFound(err) {
 		return nil, workspace.ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	w := &workspace.Workspace{Name: ws.Name}
-	if ws.Isolated != nil {
-		w.Isolated = *ws.Isolated
-	}
-	return w, nil
+	return &workspace.Workspace{Name: ws.Name, Isolated: ws.Isolated}, nil
 }
 
 func (r *WorkspaceRepository) Create(ctx context.Context, w workspace.Workspace) error {
-	return r.c.CreateWorkspace(ctx, w.Name)
+	return r.c.CreateWorkspace(ctx, gs.Workspace{Name: w.Name, Isolated: w.Isolated})
 }
 
 func (r *WorkspaceRepository) Delete(ctx context.Context, name string, recurse bool) error {
 	err := r.c.DeleteWorkspace(ctx, name, recurse)
-	if IsNotFound(err) {
+	if gs.IsNotFound(err) {
 		return workspace.ErrNotFound
 	}
 	return err
 }
 
 // DatastoreRepository adapta Client a datastore.Repository (PostGIS).
-type DatastoreRepository struct{ c *Client }
+type DatastoreRepository struct{ c *gs.Client }
 
-func NewDatastoreRepository(c *Client) *DatastoreRepository { return &DatastoreRepository{c} }
+func NewDatastoreRepository(c *gs.Client) *DatastoreRepository { return &DatastoreRepository{c} }
 
 func (r *DatastoreRepository) Get(ctx context.Context, ws, name string) (*datastore.Datastore, error) {
 	ds, err := r.c.GetDataStore(ctx, ws, name)
-	if IsNotFound(err) {
+	if gs.IsNotFound(err) {
 		return nil, datastore.ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	port, _ := strconv.Atoi(ds.Params["port"])
+	port, _ := strconv.Atoi(ds.ConnectionParameters["port"])
 	return &datastore.Datastore{
 		Workspace: ws,
 		Name:      ds.Name,
 		PostGIS: datastore.PostGIS{
-			Host:     ds.Params["host"],
+			Host:     ds.ConnectionParameters["host"],
 			Port:     port,
-			Database: ds.Params["database"],
-			Schema:   ds.Params["schema"],
-			User:     ds.Params["user"],
+			Database: ds.ConnectionParameters["database"],
+			Schema:   ds.ConnectionParameters["schema"],
+			User:     ds.ConnectionParameters["user"],
 			// GeoServer enmascara el password al leerlo; no se devuelve.
 		},
 	}, nil
@@ -79,10 +78,11 @@ func (r *DatastoreRepository) Create(ctx context.Context, d datastore.Datastore)
 	if schema == "" {
 		schema = "public"
 	}
-	return r.c.CreateDataStore(ctx, d.Workspace, DataStore{
-		Name: d.Name,
-		Type: "PostGIS",
-		Params: map[string]string{
+	return r.c.CreateDataStore(ctx, d.Workspace, gs.DataStore{
+		Name:    d.Name,
+		Type:    "PostGIS",
+		Enabled: true,
+		ConnectionParameters: map[string]string{
 			"dbtype":              "postgis",
 			"host":                p.Host,
 			"port":                strconv.Itoa(port),
@@ -97,20 +97,20 @@ func (r *DatastoreRepository) Create(ctx context.Context, d datastore.Datastore)
 
 func (r *DatastoreRepository) Delete(ctx context.Context, ws, name string, recurse bool) error {
 	err := r.c.DeleteDataStore(ctx, ws, name, recurse)
-	if IsNotFound(err) {
+	if gs.IsNotFound(err) {
 		return datastore.ErrNotFound
 	}
 	return err
 }
 
 // LayerRepository adapta Client a layer.Repository.
-type LayerRepository struct{ c *Client }
+type LayerRepository struct{ c *gs.Client }
 
-func NewLayerRepository(c *Client) *LayerRepository { return &LayerRepository{c} }
+func NewLayerRepository(c *gs.Client) *LayerRepository { return &LayerRepository{c} }
 
 func (r *LayerRepository) Get(ctx context.Context, ws, store, name string) (*layer.Layer, error) {
 	ft, err := r.c.GetFeatureType(ctx, ws, store, name)
-	if IsNotFound(err) {
+	if gs.IsNotFound(err) {
 		return nil, layer.ErrNotFound
 	}
 	if err != nil {
@@ -120,14 +120,14 @@ func (r *LayerRepository) Get(ctx context.Context, ws, store, name string) (*lay
 }
 
 func (r *LayerRepository) Create(ctx context.Context, l layer.Layer) error {
-	return r.c.CreateFeatureType(ctx, l.Workspace, l.Store, FeatureType{
-		Name: l.Name, NativeName: l.NativeTable(), Title: l.Title, SRS: l.SRS,
+	return r.c.CreateFeatureType(ctx, l.Workspace, l.Store, gs.FeatureType{
+		Name: l.Name, NativeName: l.NativeTable(), Title: l.Title, SRS: l.SRS, Enabled: true,
 	})
 }
 
 func (r *LayerRepository) Delete(ctx context.Context, ws, store, name string) error {
 	err := r.c.DeleteFeatureType(ctx, ws, store, name, true)
-	if IsNotFound(err) {
+	if gs.IsNotFound(err) {
 		return layer.ErrNotFound
 	}
 	return err
