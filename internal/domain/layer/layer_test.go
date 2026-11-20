@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"geoform/internal/domain/layer"
+	"github.com/neocaos/geoform/internal/domain/layer"
 )
 
 type fakeRepo struct {

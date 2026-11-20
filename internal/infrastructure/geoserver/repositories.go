@@ -4,9 +4,9 @@ import (
 	"context"
 	"strconv"
 
-	"geoform/internal/domain/datastore"
-	"geoform/internal/domain/layer"
-	"geoform/internal/domain/workspace"
+	"github.com/neocaos/geoform/internal/domain/datastore"
+	"github.com/neocaos/geoform/internal/domain/layer"
+	"github.com/neocaos/geoform/internal/domain/workspace"
 )
 
 // WorkspaceRepository adapta Client a workspace.Repository.

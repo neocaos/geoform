@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"geoform/internal/infrastructure/geoserver"
+	"github.com/neocaos/geoform/internal/infrastructure/geoserver"
 )
 
 func TestClient_GetWorkspace_Success(t *testing.T) {
