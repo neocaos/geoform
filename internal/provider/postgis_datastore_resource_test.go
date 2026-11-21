@@ -23,7 +23,7 @@ func testAccPostGIS() (host, database, user, password string) {
 		}
 		return def
 	}
-	return get("TEST_POSTGIS_HOST", "db"), get("TEST_POSTGIS_DATABASE", "geoform_dev"),
+	return get("TEST_POSTGIS_HOST", "db"), get("TEST_POSTGIS_DATABASE", "geoform"),
 		get("TEST_POSTGIS_USER", "geouser"), get("TEST_POSTGIS_PASSWORD", "geopassword")
 }
 

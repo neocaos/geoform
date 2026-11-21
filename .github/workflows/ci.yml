@@ -41,7 +41,7 @@ jobs:
       fail-fast: false
       matrix:
         # Keep in sync with GEOSERVER_VERSIONS in the Makefile.
-        geoserver: ["2.28.5", "2.25.7", "2.24.5"]
+        geoserver: ["2.28.5", "2.25.4", "2.24.4"]
     env:
       GEOSERVER_VERSION: ${{ matrix.geoserver }}
     steps:

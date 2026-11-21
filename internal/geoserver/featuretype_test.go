@@ -97,3 +97,20 @@ func TestClient_UpdateAndDeleteFeatureType(t *testing.T) {
 		}
 	}
 }
+
+func TestLayerExists(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/geoserver/rest/layers/acme:roads.json" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Write([]byte(`{}`))
+	})
+
+	if ok, err := client.LayerExists(context.Background(), "acme", "roads"); err != nil || !ok {
+		t.Fatalf("roads: ok=%v err=%v", ok, err)
+	}
+	if ok, err := client.LayerExists(context.Background(), "acme", "nope"); err != nil || ok {
+		t.Fatalf("nope: ok=%v err=%v", ok, err)
+	}
+}

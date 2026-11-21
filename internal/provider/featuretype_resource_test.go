@@ -26,7 +26,7 @@ func testAccCreateTable(t *testing.T) string {
 		if port == "" {
 			port = "5432"
 		}
-		dsn = "postgres://geouser:geopassword@localhost:" + port + "/geoform_dev?sslmode=disable"
+		dsn = "postgres://geouser:geopassword@localhost:" + port + "/geoform?sslmode=disable"
 	}
 
 	ctx := context.Background()

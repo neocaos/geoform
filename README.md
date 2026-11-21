@@ -114,13 +114,14 @@ make build     # builds ./terraform-provider-geoserver
 make test      # unit tests, no Docker
 make testacc   # starts GeoServer in Docker, runs acceptance tests, tears it down
 make testacc-all # the same, against every supported GeoServer version
-make up / down # just start / stop local GeoServer (admin / geoserver) and PostGIS
+make up / down # just start / stop the local stack: GeoServer (admin / geoserver) and seeded PostGIS
 ```
 
-Tested against GeoServer **2.28.5, 2.25.7 and 2.24.5** (the official
-`docker.osgeo.org/geoserver` image), the most-used versions in public Docker
+Tested against GeoServer **2.28.5, 2.25.4 and 2.24.4** (the
+[`kartoza/geoserver`](https://hub.docker.com/r/kartoza/geoserver) image; the
+newest Kartoza tags of the 2.25 and 2.24 lines), the most-used versions in public Docker
 setups. CI runs the acceptance tests on each; `make testacc` uses 2.28.5 unless
-`GEOSERVER_VERSION` is set, e.g. `GEOSERVER_VERSION=2.24.5 make testacc`.
+`GEOSERVER_VERSION` is set, e.g. `GEOSERVER_VERSION=2.24.4 make testacc`.
 
 Set `GEOSERVER_PORT` / `POSTGIS_PORT` if 8080 / 5432 are taken, e.g.
 `GEOSERVER_PORT=18080 POSTGIS_PORT=15432 make testacc`.
@@ -141,7 +142,8 @@ provider_installation {
 
 ```
 main.go                 provider entry point
-internal/geoserver/     GeoServer REST API client
+internal/geoserver/     GeoServer REST API client (the only one)
+internal/infrastructure/geoserver/  adapters from that client to the domain repositories
 internal/provider/      Terraform provider, resources and acceptance tests
 examples/               example configurations
 ```
@@ -149,18 +151,20 @@ examples/               example configurations
 
 ## Stack de desarrollo (Kartoza + PostGIS)
 
-GeoServer ([`kartoza/geoserver:2.28.5`](https://hub.docker.com/r/kartoza/geoserver)) + PostGIS (`postgis/postgis:16-3.4`)
-en una red compose compartida. PostGIS se siembra con `test/testdata/postgis/init.sql`
-(esquema `geodata`: `cities` puntos, `roads` líneas, `regions` polígonos; SRID 4326 con índice GIST).
+Un único `docker-compose.yml`: GeoServer ([`kartoza/geoserver`](https://hub.docker.com/r/kartoza/geoserver),
+2.28.5 por defecto) + PostGIS (`postgis/postgis:16-3.4`) en una red compose compartida. PostGIS se siembra con
+`test/testdata/postgis/init.sql` (esquema `geodata`: `cities` puntos, `roads` líneas, `regions` polígonos;
+SRID 4326 con índice GIST). Lo usan `make up`, `make testacc` y el desarrollo manual.
 
 ```sh
-docker compose -f docker-compose.dev.yml up -d --wait   # el primer arranque de GeoServer tarda ~1 min
+make up      # = docker compose up -d --wait; el primer arranque de GeoServer tarda ~1 min
 # GeoServer: http://localhost:8080/geoserver  (admin / geoserver)
 # PostGIS:   localhost:5432  (geouser / geopassword, base geoform)
-docker compose -f docker-compose.dev.yml down -v        # parar y borrar datos
+make down    # parar y borrar datos
 ```
 
-Dentro de la red compose, GeoServer ve la base como host `db`, puerto `5432`.
+`GEOSERVER_VERSION`, `GEOSERVER_PORT` y `POSTGIS_PORT` cambian versión y puertos. Dentro de la red
+compose, GeoServer ve la base como host `db`, puerto `5432`.
 
 ## Tests de integración (cliente REST de #2)
 
