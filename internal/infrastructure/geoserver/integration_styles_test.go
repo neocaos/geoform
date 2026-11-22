@@ -5,6 +5,7 @@ package geoserver_test
 import (
 	"context"
 	"errors"
+	"github.com/neocaos/geoform/internal/testenv"
 	"os"
 	"reflect"
 	"testing"
@@ -30,9 +31,9 @@ func readSLD(t *testing.T, name string) string {
 func TestIntegration_StylesAndLayerGroups(t *testing.T) {
 	ctx := context.Background()
 	client := gs.NewClient(
-		env("GEOSERVER_URL", "http://localhost:18080/geoserver/rest"),
-		env("GEOSERVER_USER", "admin"),
-		env("GEOSERVER_PASS", "geoserver"),
+		testenv.URL(),
+		testenv.User(),
+		testenv.Pass(),
 	)
 	const ws = "geoform_it_styles"
 	cleanup := func() { _ = client.DeleteWorkspace(ctx, ws, true) }

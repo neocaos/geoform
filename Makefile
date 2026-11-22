@@ -1,4 +1,4 @@
-.PHONY: build build-cli install fmt vet test test-integration stack-up stack-down testacc testacc-all up down
+.PHONY: test-race security build build-cli install fmt vet test test-integration stack-up stack-down testacc testacc-all up down
 
 BINARY       := terraform-provider-geoserver
 COMPOSE_TEST  = docker compose -f docker-compose.test.yml
@@ -32,18 +32,29 @@ vet:
 test:
 	go test ./...
 
-# Levanta el stack de tests (Kartoza GeoServer + PostGIS) y espera a que esté healthy
+# Stack de tests (Kartoza GeoServer + PostGIS) para uso manual. Puertos y
+# proyecto configurables: COMPOSE_PROJECT_NAME, GEOFORM_TEST_GEOSERVER_PORT,
+# GEOFORM_TEST_POSTGIS_PORT (ver docs/testing.md).
 stack-up:
 	$(COMPOSE_TEST) up -d --wait --wait-timeout 300
 
 stack-down:
-	$(COMPOSE_TEST) down -v
+	$(COMPOSE_TEST) down -v --remove-orphans
 
-# Integration tests contra GeoServer + PostGIS reales (docker-compose.test.yml).
-# El stack se elimina siempre, incluso si los tests fallan; se conserva el exit code de go test.
+# Integration tests contra GeoServer + PostGIS reales. Cada ejecución usa un
+# proyecto compose único y puertos libres (aislada de otras ejecuciones) y
+# elimina siempre el stack, incluso si fallan los tests o se interrumpe.
 test-integration:
-	$(COMPOSE_TEST) up -d --wait --wait-timeout 300 || { $(COMPOSE_TEST) logs --tail=50; $(COMPOSE_TEST) down -v; exit 1; }
-	go test -count=1 -tags=integration ./internal/... -v; rc=$$?; $(COMPOSE_TEST) down -v; exit $$rc
+	./scripts/integration.sh
+
+# Unit tests con detector de carreras.
+test-race:
+	go test -race ./...
+
+# Análisis de seguridad (vulnerabilidades y gosec); mismas herramientas que CI.
+security:
+	go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+	go run github.com/securego/gosec/v2/cmd/gosec@v2.22.10 -quiet ./...
 
 # Terraform acceptance tests (docker-compose.yml, Kartoza GeoServer + seeded
 # PostGIS): starts the stack, runs real

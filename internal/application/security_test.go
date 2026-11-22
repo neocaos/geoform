@@ -161,3 +161,36 @@ func TestSecurity_ApplyStopsOnError(t *testing.T) {
 		t.Fatalf("error: %v", err)
 	}
 }
+
+func TestSecurity_PasswordRotationIsPlannedAndApplied(t *testing.T) {
+	ctx := context.Background()
+	s, sec := memory.New(), memory.NewSecurity()
+	r := secReconciler(s, sec)
+	d := secDesired()
+	if err := r.Apply(ctx, mustPlan(t, r, d, false), nil); err != nil {
+		t.Fatal(err)
+	}
+	if plan := mustPlan(t, r, d, false); plan.HasChanges() {
+		t.Fatalf("sin rotación no debe haber diff: %+v", plan.Changes)
+	}
+
+	d.Security.Users[0].Password = "otra-contraseña-nueva"
+	plan := mustPlan(t, r, d, false)
+	if len(plan.Changes) != 1 || plan.Changes[0].Kind != application.KindUser || plan.Changes[0].Details[0] != "password: rotar" {
+		t.Fatalf("rotación no detectada: %+v", plan.Changes)
+	}
+	for _, c := range plan.Changes {
+		if strings.Contains(strings.Join(c.Details, " "), "otra-contraseña") {
+			t.Fatal("el plan no debe mostrar la contraseña")
+		}
+	}
+	if err := r.Apply(ctx, plan, nil); err != nil {
+		t.Fatal(err)
+	}
+	if sec.Users["alice"].Password != "otra-contraseña-nueva" {
+		t.Fatal("la contraseña no se rotó")
+	}
+	if plan := mustPlan(t, r, d, false); plan.HasChanges() {
+		t.Fatalf("tras rotar no debe haber diff: %+v", plan.Changes)
+	}
+}

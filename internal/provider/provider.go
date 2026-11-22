@@ -19,7 +19,7 @@ import (
 const (
 	envURL      = "GEOSERVER_URL"
 	envUsername = "GEOSERVER_USERNAME"
-	envPassword = "GEOSERVER_PASSWORD"
+	envPassword = "GEOSERVER_PASSWORD" // #nosec G101 -- nombre de variable de entorno, no una credencial
 )
 
 var _ provider.Provider = (*geoserverProvider)(nil)

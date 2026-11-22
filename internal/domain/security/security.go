@@ -169,6 +169,13 @@ type Repository interface {
 	DeleteRule(ctx context.Context, r Rule) error
 }
 
+// PasswordVerifier es una capacidad opcional de un Repository: comprueba si la
+// contraseña dada es la vigente del usuario (GeoServer no la devuelve, así que
+// se prueba iniciando sesión). Permite detectar rotaciones de contraseña.
+type PasswordVerifier interface {
+	PasswordMatches(ctx context.Context, name, password string) (bool, error)
+}
+
 // Service contiene la lógica de negocio de seguridad.
 type Service struct{ repo Repository }
 
@@ -179,6 +186,17 @@ func (s *Service) ListUsers(ctx context.Context) ([]string, error) { return s.re
 func (s *Service) ListRules(ctx context.Context) ([]Rule, error)   { return s.repo.ListRules(ctx) }
 func (s *Service) GetUser(ctx context.Context, name string) (*User, error) {
 	return s.repo.GetUser(ctx, name)
+}
+
+// PasswordCurrent informa de si la contraseña del usuario ya es la vigente.
+// supported es false si el repositorio no sabe comprobarlo.
+func (s *Service) PasswordCurrent(ctx context.Context, name, password string) (ok, supported bool, err error) {
+	v, can := s.repo.(PasswordVerifier)
+	if !can || password == "" {
+		return false, false, nil
+	}
+	ok, err = v.PasswordMatches(ctx, name, password)
+	return ok, true, err
 }
 
 // EnsureRole crea el rol si no existe.

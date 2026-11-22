@@ -4,7 +4,6 @@ package geoserver_test
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/neocaos/geoform/internal/domain/datastore"
@@ -12,23 +11,17 @@ import (
 	"github.com/neocaos/geoform/internal/domain/workspace"
 	gs "github.com/neocaos/geoform/internal/geoserver"
 	"github.com/neocaos/geoform/internal/infrastructure/geoserver"
+	"github.com/neocaos/geoform/internal/testenv"
 )
 
 // Requiere el stack de docker-compose.test.yml levantado (make test-integration).
 
-func env(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
 func TestIntegration_PostGISPublishLifecycle(t *testing.T) {
 	ctx := context.Background()
 	client := gs.NewClient(
-		env("GEOSERVER_URL", "http://localhost:18080/geoserver/rest"),
-		env("GEOSERVER_USER", "admin"),
-		env("GEOSERVER_PASS", "geoserver"),
+		testenv.URL(),
+		testenv.User(),
+		testenv.Pass(),
 	)
 
 	const ws = "geoform_it"

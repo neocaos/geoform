@@ -113,9 +113,19 @@ func (r *Reconciler) planSecurity(ctx context.Context, want Desired, prune bool,
 		if err != nil {
 			return nil, fmt.Errorf("leyendo usuario %q: %w", u.Name, err)
 		}
-		// La contraseña no se compara (GeoServer no la devuelve): solo se
-		// reaplica cuando cambia otra cosa.
+		// GeoServer no devuelve la contraseña: si el repositorio sabe
+		// verificarla (login real), una rotación aparece como cambio. Un usuario
+		// deshabilitado no puede iniciar sesión, así que no se comprueba.
 		var diff []string
+		if cur.Enabled && u.Enabled {
+			ok, supported, err := r.sec.PasswordCurrent(ctx, u.Name, u.Password)
+			if err != nil {
+				return nil, fmt.Errorf("verificando contraseña de %q: %w", u.Name, err)
+			}
+			if supported && !ok {
+				diff = append(diff, "password: rotar")
+			}
+		}
 		if cur.Enabled != u.Enabled {
 			diff = append(diff, fmt.Sprintf("enabled: %t -> %t", cur.Enabled, u.Enabled))
 		}

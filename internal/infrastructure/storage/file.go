@@ -118,12 +118,14 @@ var (
 	// Nombres válidos en GeoServer: letra o _ al inicio, sin espacios ni ':' o '/'.
 	namePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
 	srsPattern  = regexp.MustCompile(`^EPSG:[0-9]+$`)
+	// yamlQuoted detecta los valores entre acentos graves de los errores de yaml.v3.
+	yamlQuoted = regexp.MustCompile("`[^`]*`")
 )
 
 // LoadFile lee y valida el fichero de configuración en path. getenv resuelve
 // password_env (normalmente os.Getenv).
 func LoadFile(path string, getenv func(string) string) (application.Desired, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- la ruta es el --file que el usuario pasa a la CLI
 	if err != nil {
 		return application.Desired{}, fmt.Errorf("abriendo configuración: %w", err)
 	}
@@ -154,7 +156,8 @@ func parse(r io.Reader, getenv func(string) string, baseDir string) (application
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil {
-		return application.Desired{}, fmt.Errorf("YAML inválido: %w", err)
+		// yaml.v3 cita el valor ofensivo (`valor`); se oculta por si es un secreto.
+		return application.Desired{}, fmt.Errorf("YAML inválido: %s", yamlQuoted.ReplaceAllString(err.Error(), "`…`"))
 	}
 	if len(cfg.Workspaces) == 0 {
 		return application.Desired{}, errors.New("no hay ningún workspace declarado (clave 'workspaces')")
@@ -263,7 +266,7 @@ func buildStyles(out *application.Desired, w fileWorkspace, wp, baseDir string,
 			if !filepath.IsAbs(p) {
 				p = filepath.Join(baseDir, p)
 			}
-			b, err := os.ReadFile(p)
+			b, err := os.ReadFile(p) // #nosec G304 -- el YAML es configuración de confianza; la ruta del SLD la elige quien lo escribe
 			if err != nil {
 				bad(sp+".file", "no se puede leer el SLD: %v", err)
 				continue

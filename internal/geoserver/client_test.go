@@ -180,3 +180,44 @@ func TestClient_DeleteWorkspace_NotFound(t *testing.T) {
 		t.Fatalf("expected not-found error, got: %v", err)
 	}
 }
+
+func TestAPIError_RedactsSecrets(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(string(body) + r.Header.Get("Authorization")))
+	}))
+	defer srv.Close()
+	c := geoserver.NewClient(srv.URL, "admin", "rest-pw-123")
+	err := c.CreateUser(context.Background(), geoserver.User{Name: "u", Password: "user-pw-456", Enabled: true})
+	if err == nil {
+		t.Fatal("se esperaba error")
+	}
+	for _, secret := range []string{"rest-pw-123", "user-pw-456", "YWRtaW46"} {
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("el error filtra %q: %v", secret, err)
+		}
+	}
+}
+
+func TestCheckCredentials(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, p, _ := r.BasicAuth()
+		switch {
+		case r.URL.RawQuery != "" || strings.Contains(r.URL.String(), p) && p != "":
+			t.Errorf("credenciales en la URL: %s", r.URL)
+		case u == "ok" && p == "good":
+			w.WriteHeader(http.StatusForbidden) // válidas pero no admin
+		default:
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer srv.Close()
+	c := geoserver.NewClient(srv.URL, "admin", "x")
+	if ok, err := c.CheckCredentials(context.Background(), "ok", "good"); err != nil || !ok {
+		t.Fatalf("válidas: %v %v", ok, err)
+	}
+	if ok, err := c.CheckCredentials(context.Background(), "ok", "bad"); err != nil || ok {
+		t.Fatalf("inválidas: %v %v", ok, err)
+	}
+}

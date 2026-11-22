@@ -1,6 +1,12 @@
 # Stack efímero para integration tests (sin volúmenes; `down -v` lo limpia).
-# Puertos del host distintos a los de dev para poder tener ambos levantados.
-name: geoform-test
+# Aislamiento entre ejecuciones (workers, CI, desarrolladores):
+#   COMPOSE_PROJECT_NAME            nombre del proyecto (por defecto geoform-test)
+#   GEOFORM_TEST_GEOSERVER_PORT     puerto del host de GeoServer (por defecto 18080)
+#   GEOFORM_TEST_POSTGIS_PORT       puerto del host de PostGIS   (por defecto 15432)
+# Si la variable está definida pero VACÍA, Docker elige un puerto libre.
+# `make test-integration` usa un proyecto único y puertos libres por ejecución.
+# Los puertos solo escuchan en loopback.
+name: ${COMPOSE_PROJECT_NAME:-geoform-test}
 
 services:
   db:
@@ -10,7 +16,7 @@ services:
       POSTGRES_PASSWORD: geopassword
       POSTGRES_DB: geoform
     ports:
-      - "15432:5432"
+      - "127.0.0.1:${GEOFORM_TEST_POSTGIS_PORT-15432}:5432"
     volumes:
       - ./test/testdata/postgis/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
     healthcheck:
@@ -28,7 +34,7 @@ services:
       INSTALL_EXTENSIONS: "false"
       SAMPLE_DATA: "false"
     ports:
-      - "18080:8080"
+      - "127.0.0.1:${GEOFORM_TEST_GEOSERVER_PORT-18080}:8080"
     volumes:
       # Fixtures de ficheros (GeoPackage, shapefile, GeoTIFF), visibles en /data/stores.
       - ./test/testdata/stores:/data/stores:ro
