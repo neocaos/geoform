@@ -102,3 +102,64 @@ func TestLoadFile_Missing(t *testing.T) {
 		t.Fatal("se esperaba un error")
 	}
 }
+
+const withSecurity = valid + `
+security:
+  roles: [ROLE_EDITOR]
+  users:
+    - name: alice
+      password_env: ALICE_PW
+      roles: [ROLE_EDITOR]
+    - name: bob
+      password_env: ALICE_PW
+      enabled: false
+  rules:
+    - workspace: demo
+      layer: cities
+      access: write
+      roles: [ROLE_EDITOR]
+    - workspace: demo
+      access: read
+      roles: ["*"]
+`
+
+func TestParse_Security(t *testing.T) {
+	e := env(map[string]string{"PG_PASSWORD": "x", "ALICE_PW": "pw-alice"})
+	d, err := storage.Parse(strings.NewReader(withSecurity), e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := d.Security
+	if s == nil || len(s.Roles) != 1 || len(s.Users) != 2 || len(s.Rules) != 2 {
+		t.Fatalf("security: %+v", s)
+	}
+	if !s.Users[0].Enabled || s.Users[1].Enabled || s.Users[0].Password != "pw-alice" {
+		t.Errorf("users: %+v", s.Users)
+	}
+	if s.Rules[1].Layer != "*" || s.Rules[0].Key() != "demo.cities.w" {
+		t.Errorf("rules: %+v", s.Rules)
+	}
+	if err := d.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	// Sin sección security no se gestiona.
+	d, err = storage.Parse(strings.NewReader(valid), e)
+	if err != nil || d.Security != nil {
+		t.Fatalf("security debe ser nil: %+v %v", d.Security, err)
+	}
+}
+
+func TestParse_SecurityErrors(t *testing.T) {
+	cases := map[string]struct{ yaml, want string }{
+		"sin password_env":  {valid + "security:\n  users:\n    - name: a\n", "security.users[0].password_env"},
+		"password en claro": {valid + "security:\n  users:\n    - name: a\n      password: x\n", "password"},
+		"env sin definir":   {valid + "security:\n  users:\n    - name: a\n      password_env: NOPE\n", "NOPE"},
+		"acceso":            {valid + "security:\n  rules:\n    - workspace: demo\n      access: admin\n      roles: [R]\n", "security.rules[0].access"},
+	}
+	for name, c := range cases {
+		_, err := storage.Parse(strings.NewReader(c.yaml), env(map[string]string{"PG_PASSWORD": "x"}))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v (esperaba %q)", name, err, c.want)
+		}
+	}
+}
