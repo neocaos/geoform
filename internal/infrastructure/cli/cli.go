@@ -11,6 +11,7 @@ import (
 	"github.com/neocaos/geoform/internal/application"
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
+	"github.com/neocaos/geoform/internal/domain/security"
 	"github.com/neocaos/geoform/internal/domain/workspace"
 	gs "github.com/neocaos/geoform/internal/geoserver"
 	gsrepo "github.com/neocaos/geoform/internal/infrastructure/geoserver"
@@ -53,7 +54,7 @@ func GeoServerReconciler(c Conn) *application.Reconciler {
 		workspace.NewService(gsrepo.NewWorkspaceRepository(client)),
 		datastore.NewService(gsrepo.NewDatastoreRepository(client)),
 		layer.NewService(gsrepo.NewLayerRepository(client)),
-	)
+	).WithSecurity(security.NewService(gsrepo.NewSecurityRepository(client)))
 }
 
 const usage = `Uso: geoform <comando> [opciones]
@@ -71,7 +72,7 @@ Opciones comunes (plan, apply):
   --password  Contraseña de la API REST    [GEOSERVER_PASSWORD]; mejor por entorno que por flag
 
 Opciones de apply:
-  --prune         Borra datastores y capas sobrantes de los workspaces declarados
+  --prune         Borra datastores, capas, y (si hay sección security) usuarios, roles y reglas sobrantes
   --auto-approve  No pide confirmación
 
 Códigos de salida: 0 ok / plan sin cambios, 1 error, 2 plan con cambios, 3 configuración o uso inválido.

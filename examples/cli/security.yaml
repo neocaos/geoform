@@ -1,0 +1,27 @@
+# Seguridad de GeoServer con la CLI `geoform`: usuarios, roles y reglas de acceso.
+#   export ALICE_PASSWORD=... BOB_PASSWORD=...
+#   geoform plan  --file examples/cli/security.yaml
+#   geoform apply --file examples/cli/security.yaml [--prune]
+#
+# Las contraseñas nunca van en el fichero: password_env nombra la variable de entorno.
+workspaces:
+  - name: demo
+
+security:
+  roles: [ROLE_EDITOR, ROLE_VIEWER]
+  users:
+    - name: alice
+      password_env: ALICE_PASSWORD
+      roles: [ROLE_EDITOR]
+    - name: bob
+      password_env: BOB_PASSWORD
+      enabled: false
+      roles: [ROLE_VIEWER]
+  rules:
+    - workspace: demo            # todo el workspace: lectura para ambos roles
+      access: read
+      roles: [ROLE_VIEWER, ROLE_EDITOR]
+    - workspace: demo            # una capa concreta: escritura solo para editores
+      layer: cities
+      access: write
+      roles: [ROLE_EDITOR]

@@ -11,6 +11,7 @@ import (
 
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
+	"github.com/neocaos/geoform/internal/domain/security"
 	"github.com/neocaos/geoform/internal/domain/workspace"
 )
 
@@ -20,6 +21,8 @@ type Desired struct {
 	Workspaces []workspace.Workspace
 	Datastores []datastore.Datastore
 	Layers     []layer.Layer
+	// Security, si no es nil, activa la gestión de usuarios, roles y reglas.
+	Security *SecurityDesired
 }
 
 // Validate aplica las reglas de dominio y comprueba duplicados y referencias.
@@ -64,6 +67,9 @@ func (d Desired) Validate() error {
 			errs = append(errs, fmt.Errorf("capa %q: el datastore %q no está declarado", k, l.Workspace+"/"+l.Store))
 		}
 	}
+	if d.Security != nil {
+		errs = append(errs, d.Security.validate(wss)...)
+	}
 	return errors.Join(errs...)
 }
 
@@ -83,6 +89,9 @@ const (
 	KindWorkspace Kind = "workspace"
 	KindDatastore Kind = "datastore"
 	KindLayer     Kind = "layer"
+	KindRole      Kind = "role"
+	KindUser      Kind = "user"
+	KindRule      Kind = "rule"
 )
 
 // Change es un cambio concreto. Lleva el recurso deseado (en Create/Update)
@@ -98,6 +107,9 @@ type Change struct {
 	Workspace workspace.Workspace
 	Datastore datastore.Datastore
 	Layer     layer.Layer
+	Role      string
+	User      security.User
+	Rule      security.Rule
 }
 
 // Plan es la lista ordenada de cambios necesarios; vacía si no hay diferencias.
@@ -119,9 +131,10 @@ func (p Plan) Count(a Action) int {
 
 // Reconciler calcula y aplica planes sobre los servicios de dominio.
 type Reconciler struct {
-	ws *workspace.Service
-	ds *datastore.Service
-	ly *layer.Service
+	ws  *workspace.Service
+	ds  *datastore.Service
+	ly  *layer.Service
+	sec *security.Service
 }
 
 // NewReconciler inyecta los servicios de dominio.
@@ -202,6 +215,11 @@ func (r *Reconciler) Plan(ctx context.Context, want Desired, opts PlanOptions) (
 			return nil, err
 		}
 	}
+	secDeletes, err := r.planSecurity(ctx, want, opts.Prune, plan)
+	if err != nil {
+		return nil, err
+	}
+	deletes = append(deletes, secDeletes...)
 	plan.Changes = append(plan.Changes, deletes...)
 	return plan, nil
 }
@@ -270,6 +288,9 @@ func (r *Reconciler) Apply(ctx context.Context, plan *Plan, progress func(Change
 }
 
 func (r *Reconciler) applyOne(ctx context.Context, c Change) error {
+	if handled, err := r.applySecurity(ctx, c); handled {
+		return err
+	}
 	switch c.Kind {
 	case KindWorkspace:
 		switch c.Action {
@@ -317,6 +338,7 @@ func normalize(d Desired) Desired {
 		Workspaces: append([]workspace.Workspace(nil), d.Workspaces...),
 		Datastores: append([]datastore.Datastore(nil), d.Datastores...),
 		Layers:     append([]layer.Layer(nil), d.Layers...),
+		Security:   d.Security,
 	}
 	for i := range out.Datastores {
 		out.Datastores[i].PostGIS = normalizePostGIS(out.Datastores[i].PostGIS)

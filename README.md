@@ -61,6 +61,9 @@ Behaviour notes:
   `isolated` are detected and updated in place. A layer with no `title` leaves
   GeoServer's title unmanaged. Password-only changes are not detected
   (GeoServer never returns it).
+- An optional `security:` section manages users, roles and data access rules
+  (see [Security](#security-users-roles-and-access-rules)). Without it,
+  security is never read or modified.
 - Exit codes: `0` ok / plan without changes, `1` runtime error or apply
   declined, `2` plan with pending changes, `3` invalid config or usage.
 
@@ -159,6 +162,52 @@ otherwise left alone. Unsetting `title`, `srs` or `projection_policy` keeps the
 current value rather than resetting it. Destroying a feature type also deletes
 its layer and removes it from any layer groups, since GeoServer cannot delete
 one without the other.
+
+### Security: users, roles and access rules
+
+Three resources manage the GeoServer default user/group service and the
+data-access (layer) rules. The same model is available in the CLI through the
+`security:` section of the YAML file
+([`examples/cli/security.yaml`](examples/cli/security.yaml)):
+
+```yaml
+security:
+  roles: [ROLE_EDITOR, ROLE_VIEWER]
+  users:
+    - name: alice
+      password_env: ALICE_PASSWORD   # required; passwords are never written in the file
+      enabled: true                  # optional, default true
+      roles: [ROLE_EDITOR]
+  rules:
+    - workspace: demo
+      layer: cities                  # optional, "*" = every layer of the workspace
+      access: read                   # read | write
+      roles: [ROLE_VIEWER, ROLE_EDITOR]
+```
+
+| Resource                          | Key attributes                                                                  | Import ID              |
+|-----------------------------------|---------------------------------------------------------------------------------|------------------------|
+| `geoserver_security_role`         | `name` (replaces on change)                                                     | role name              |
+| `geoserver_security_user`         | `name`, `password` (sensitive), `enabled` (default `true`), `roles` (set)       | user name (no password)|
+| `geoserver_security_layer_rule`    | `workspace`, `layer` (`*` = all), `access` (`read`/`write`), `roles` (set)      | `<ws>.<layer>.<r\|w>`  |
+
+Behaviour notes:
+
+- **Secrets**: passwords come from a sensitive Terraform variable or, in the
+  CLI, from the environment variable named by `password_env`. They are never
+  printed in plans, errors or logs. GeoServer never returns a password, so a
+  password-only change made outside Geoform is not detected; the CLI re-sends
+  it whenever the user changes, and Terraform whenever the configuration does.
+- Roles referenced by users and rules must be declared (CLI) or exist (the
+  built-in `ADMIN`, `GROUP_ADMIN`, `ROLE_AUTHENTICATED`, `ROLE_ANONYMOUS` and
+  `*` are always accepted).
+- Rule workspace and layer names cannot contain `.` (GeoServer joins the rule
+  key with dots). Only `read` and `write` rules are managed; `admin` rules are
+  left alone.
+- `--prune` with a `security:` section also deletes users and roles missing from
+  the file, and rules of the declared workspaces. It never deletes the `admin`
+  user, the `ADMIN`/`GROUP_ADMIN` roles, global rules (`*.*.r`) or rules of
+  workspaces not in the file.
 
 More in [`examples/`](examples).
 

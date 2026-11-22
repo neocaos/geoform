@@ -39,6 +39,7 @@ import (
 //	            srs: EPSG:4326
 type fileConfig struct {
 	Workspaces []fileWorkspace `yaml:"workspaces"`
+	Security   *fileSecurity   `yaml:"security"`
 }
 
 type fileWorkspace struct {
@@ -184,6 +185,11 @@ func build(cfg fileConfig, getenv func(string) string) (application.Desired, err
 				out.Layers = append(out.Layers, layer.Layer{Workspace: w.Name, Store: d.Name, Name: l.Name, Table: l.Table, Title: l.Title, SRS: l.SRS})
 			}
 		}
+	}
+	if cfg.Security != nil {
+		sec, secErrs := buildSecurity(*cfg.Security, getenv)
+		out.Security = &sec
+		errs = append(errs, secErrs...)
 	}
 	if err := errors.Join(errs...); err != nil {
 		return application.Desired{}, err
