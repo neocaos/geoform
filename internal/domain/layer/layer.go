@@ -18,6 +18,9 @@ type Layer struct {
 	Table     string // tabla nativa; si está vacío se usa Name
 	Title     string
 	SRS       string // ej. "EPSG:4326"
+	// Style es el estilo por defecto: "nombre" (estilo del workspace de la capa
+	// si existe, o global) o "workspace:nombre". Vacío = no gestionado.
+	Style string
 }
 
 // NativeTable devuelve la tabla de origen.

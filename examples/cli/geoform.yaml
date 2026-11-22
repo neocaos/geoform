@@ -8,6 +8,15 @@
 # Los secretos nunca van en el fichero: password_env nombra la variable de entorno.
 workspaces:
   - name: demo
+    # Estilos SLD del workspace; file es relativo a este YAML (o usa sld: inline).
+    styles:
+      - name: ciudades
+        file: styles/ciudades.sld
+    # Grupos de capas del workspace, en orden de dibujo.
+    layergroups:
+      - name: base
+        title: Mapa base
+        layers: [regions, roads, cities]
     datastores:
       - name: postgis
         host: db            # visto desde GeoServer (nombre del servicio en compose)
@@ -20,6 +29,7 @@ workspaces:
           - name: cities
             title: Ciudades
             srs: EPSG:4326
+            style: ciudades     # estilo por defecto (declarado arriba)
           - name: roads
             title: Carreteras
             srs: EPSG:4326

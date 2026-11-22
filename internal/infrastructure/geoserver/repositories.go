@@ -5,6 +5,7 @@ package geoserver
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
@@ -157,7 +158,18 @@ func (r *LayerRepository) Get(ctx context.Context, ws, store, name string) (*lay
 	if err != nil {
 		return nil, err
 	}
-	return &layer.Layer{Workspace: ws, Store: store, Name: ft.Name, Table: ft.NativeName, Title: ft.Title, SRS: ft.SRS}, nil
+	l := &layer.Layer{Workspace: ws, Store: store, Name: ft.Name, Table: ft.NativeName, Title: ft.Title, SRS: ft.SRS}
+	ref, err := r.c.GetLayerDefaultStyle(ctx, ws, name)
+	if err != nil && !gs.IsNotFound(err) {
+		return nil, err
+	}
+	if ref != nil {
+		l.Style = ref.Name
+		if ref.Workspace != "" {
+			l.Style = ref.Workspace + ":" + ref.Name
+		}
+	}
+	return l, nil
 }
 
 func (r *LayerRepository) List(ctx context.Context, ws, store string) ([]string, error) {
@@ -182,13 +194,32 @@ func (r *LayerRepository) Update(ctx context.Context, l layer.Layer) error {
 	if l.Title != "" {
 		ft.Title = l.Title
 	}
-	return r.c.UpdateFeatureType(ctx, l.Workspace, l.Store, l.Name, *ft, false)
+	if err := r.c.UpdateFeatureType(ctx, l.Workspace, l.Store, l.Name, *ft, false); err != nil {
+		return err
+	}
+	return r.setStyle(ctx, l)
+}
+
+// setStyle asigna el estilo por defecto si la capa lo declara.
+func (r *LayerRepository) setStyle(ctx context.Context, l layer.Layer) error {
+	if l.Style == "" {
+		return nil
+	}
+	ref := gs.StyleRef{Name: l.Style}
+	if ws, n, ok := strings.Cut(l.Style, ":"); ok {
+		ref = gs.StyleRef{Name: n, Workspace: ws}
+	}
+	return r.c.SetLayerDefaultStyle(ctx, l.Workspace, l.Name, ref)
 }
 
 func (r *LayerRepository) Create(ctx context.Context, l layer.Layer) error {
-	return r.c.CreateFeatureType(ctx, l.Workspace, l.Store, gs.FeatureType{
+	err := r.c.CreateFeatureType(ctx, l.Workspace, l.Store, gs.FeatureType{
 		Name: l.Name, NativeName: l.NativeTable(), Title: l.Title, SRS: l.SRS, Enabled: true,
 	})
+	if err != nil {
+		return err
+	}
+	return r.setStyle(ctx, l)
 }
 
 func (r *LayerRepository) Delete(ctx context.Context, ws, store, name string) error {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -16,6 +17,8 @@ import (
 	"github.com/neocaos/geoform/internal/application"
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
+	"github.com/neocaos/geoform/internal/domain/layergroup"
+	"github.com/neocaos/geoform/internal/domain/style"
 	"github.com/neocaos/geoform/internal/domain/workspace"
 )
 
@@ -37,15 +40,39 @@ import (
 //	            table: cities     # opcional, por defecto el nombre
 //	            title: Ciudades
 //	            srs: EPSG:4326
+//	            style: ciudades   # opcional, estilo por defecto (ver styles)
+//	styles:                       # opcional, por workspace
+//	  - name: ciudades
+//	    file: styles/ciudades.sld # ruta relativa al YAML; o bien sld: | (inline)
+//	layergroups:                  # opcional, por workspace
+//	  - name: base
+//	    title: Capa base          # opcional
+//	    mode: SINGLE              # opcional, SINGLE por defecto
+//	    layers: [regions, cities] # capas del workspace, en orden de dibujo
 type fileConfig struct {
 	Workspaces []fileWorkspace `yaml:"workspaces"`
 	Security   *fileSecurity   `yaml:"security"`
 }
 
 type fileWorkspace struct {
-	Name       string          `yaml:"name"`
-	Isolated   bool            `yaml:"isolated"`
-	Datastores []fileDatastore `yaml:"datastores,omitempty"`
+	Name        string           `yaml:"name"`
+	Isolated    bool             `yaml:"isolated"`
+	Datastores  []fileDatastore  `yaml:"datastores,omitempty"`
+	Styles      []fileStyle      `yaml:"styles,omitempty"`
+	LayerGroups []fileLayerGroup `yaml:"layergroups,omitempty"`
+}
+
+type fileStyle struct {
+	Name string `yaml:"name"`
+	File string `yaml:"file,omitempty"`
+	SLD  string `yaml:"sld,omitempty"`
+}
+
+type fileLayerGroup struct {
+	Name   string   `yaml:"name"`
+	Title  string   `yaml:"title,omitempty"`
+	Mode   string   `yaml:"mode,omitempty"`
+	Layers []string `yaml:"layers"`
 }
 
 type fileDatastore struct {
@@ -65,6 +92,7 @@ type fileLayer struct {
 	Table string `yaml:"table,omitempty"`
 	Title string `yaml:"title,omitempty"`
 	SRS   string `yaml:"srs"`
+	Style string `yaml:"style,omitempty"`
 }
 
 var (
@@ -81,7 +109,7 @@ func LoadFile(path string, getenv func(string) string) (application.Desired, err
 		return application.Desired{}, fmt.Errorf("abriendo configuración: %w", err)
 	}
 	defer f.Close()
-	d, err := Parse(f, getenv)
+	d, err := parse(f, getenv, filepath.Dir(path))
 	if err != nil {
 		return application.Desired{}, fmt.Errorf("%s: %w", path, err)
 	}
@@ -91,6 +119,11 @@ func LoadFile(path string, getenv func(string) string) (application.Desired, err
 // Parse lee y valida la configuración YAML de r. Devuelve todos los errores de
 // validación juntos, cada uno con su ruta (p. ej. workspaces[0].datastores[1].port).
 func Parse(r io.Reader, getenv func(string) string) (application.Desired, error) {
+	return parse(r, getenv, "")
+}
+
+// parse es Parse con el directorio base para resolver styles[].file.
+func parse(r io.Reader, getenv func(string) string, baseDir string) (application.Desired, error) {
 	raw, err := io.ReadAll(r)
 	if err != nil {
 		return application.Desired{}, err
@@ -107,10 +140,10 @@ func Parse(r io.Reader, getenv func(string) string) (application.Desired, error)
 	if len(cfg.Workspaces) == 0 {
 		return application.Desired{}, errors.New("no hay ningún workspace declarado (clave 'workspaces')")
 	}
-	return build(cfg, getenv)
+	return build(cfg, getenv, baseDir)
 }
 
-func build(cfg fileConfig, getenv func(string) string) (application.Desired, error) {
+func build(cfg fileConfig, getenv func(string) string, baseDir string) (application.Desired, error) {
 	var (
 		out  application.Desired
 		errs []error
@@ -182,7 +215,7 @@ func build(cfg fileConfig, getenv func(string) string) (application.Desired, err
 				case !srsPattern.MatchString(l.SRS):
 					bad(lp+".srs", "SRS %q inválido, se espera el formato EPSG:<código>", l.SRS)
 				}
-				out.Layers = append(out.Layers, layer.Layer{Workspace: w.Name, Store: d.Name, Name: l.Name, Table: l.Table, Title: l.Title, SRS: l.SRS})
+				out.Layers = append(out.Layers, layer.Layer{Workspace: w.Name, Store: d.Name, Name: l.Name, Table: l.Table, Title: l.Title, SRS: l.SRS, Style: l.Style})
 			}
 		}
 	}
@@ -191,10 +224,74 @@ func build(cfg fileConfig, getenv func(string) string) (application.Desired, err
 		out.Security = &sec
 		errs = append(errs, secErrs...)
 	}
+	for i, w := range cfg.Workspaces {
+		wp := fmt.Sprintf("workspaces[%d]", i)
+		buildStyles(&out, w, wp, baseDir, bad, checkName)
+		buildLayerGroups(&out, w, wp, bad, checkName)
+	}
 	if err := errors.Join(errs...); err != nil {
 		return application.Desired{}, err
 	}
 	return out, nil
+}
+
+func buildStyles(out *application.Desired, w fileWorkspace, wp, baseDir string,
+	bad func(path, format string, args ...any), checkName func(path, name string) bool) {
+	seen := map[string]bool{}
+	for i, st := range w.Styles {
+		sp := fmt.Sprintf("%s.styles[%d]", wp, i)
+		if checkName(sp+".name", st.Name) {
+			if seen[st.Name] {
+				bad(sp+".name", "estilo %q duplicado en el workspace %q", st.Name, w.Name)
+			}
+			seen[st.Name] = true
+		}
+		sld := st.SLD
+		switch {
+		case st.File != "" && st.SLD != "":
+			bad(sp, "usa file o sld, no ambos")
+			continue
+		case st.File != "":
+			p := st.File
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(baseDir, p)
+			}
+			b, err := os.ReadFile(p)
+			if err != nil {
+				bad(sp+".file", "no se puede leer el SLD: %v", err)
+				continue
+			}
+			sld = string(b)
+		case st.SLD == "":
+			bad(sp, "file o sld es obligatorio")
+			continue
+		}
+		out.Styles = append(out.Styles, style.Style{Workspace: w.Name, Name: st.Name, SLD: sld})
+	}
+	// Las referencias layers[].style se validan en el dominio (Desired.Validate).
+}
+
+func buildLayerGroups(out *application.Desired, w fileWorkspace, wp string,
+	bad func(path, format string, args ...any), checkName func(path, name string) bool) {
+	seen := map[string]bool{}
+	for i, g := range w.LayerGroups {
+		gp := fmt.Sprintf("%s.layergroups[%d]", wp, i)
+		if checkName(gp+".name", g.Name) {
+			if seen[g.Name] {
+				bad(gp+".name", "grupo %q duplicado en el workspace %q", g.Name, w.Name)
+			}
+			seen[g.Name] = true
+		}
+		if len(g.Layers) == 0 {
+			bad(gp+".layers", "debe incluir al menos una capa")
+		}
+		grp := layergroup.Group{Workspace: w.Name, Name: g.Name, Title: g.Title, Mode: g.Mode, Layers: g.Layers}
+		// Las reglas de modo y capas repetidas son del dominio.
+		if err := grp.Validate(); err != nil && len(g.Layers) > 0 {
+			bad(gp, "%v", err)
+		}
+		out.LayerGroups = append(out.LayerGroups, grp)
+	}
 }
 
 func resolvePassword(d fileDatastore, getenv func(string) string) (string, error) {

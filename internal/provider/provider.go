@@ -117,6 +117,8 @@ func (p *geoserverProvider) Resources(_ context.Context) []func() resource.Resou
 		NewRoleResource,
 		NewUserResource,
 		NewLayerRuleResource,
+		NewStyleResource,
+		NewLayerGroupResource,
 	}
 }
 

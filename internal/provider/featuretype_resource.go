@@ -40,6 +40,7 @@ type featureTypeModel struct {
 	SRS              types.String `tfsdk:"srs"`
 	ProjectionPolicy types.String `tfsdk:"projection_policy"`
 	Enabled          types.Bool   `tfsdk:"enabled"`
+	DefaultStyle     types.String `tfsdk:"default_style"`
 }
 
 // NewFeatureTypeResource returns the geoserver_featuretype resource.
@@ -133,6 +134,16 @@ func (r *featureTypeResource) Schema(_ context.Context, _ resource.SchemaRequest
 						geoserver.ProjectionReprojectToDeclared, geoserver.ProjectionKeepNative),
 				},
 			},
+			"default_style": schema.StringAttribute{
+				Description: "Default style of the layer: `<style>` (a global style) or `<workspace>:<style>`. " +
+					"Chosen by GeoServer from the geometry type if unset.",
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: keepComputed,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(styleRefRegexp, "must be \"<style>\" or \"<workspace>:<style>\""),
+				},
+			},
 			"enabled": schema.BoolAttribute{
 				Description: "Whether the feature type is enabled. Defaults to `true`.",
 				Optional:    true,
@@ -173,6 +184,7 @@ func (r *featureTypeResource) Create(ctx context.Context, req resource.CreateReq
 		return
 	}
 
+	r.applyStyle(ctx, &plan, &resp.Diagnostics)
 	r.refresh(ctx, &plan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
@@ -198,6 +210,10 @@ func (r *featureTypeResource) Read(ctx context.Context, req resource.ReadRequest
 	}
 
 	state.fromAPI(ft)
+	r.readStyle(ctx, &state, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -220,6 +236,9 @@ func (r *featureTypeResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
+	if !plan.DefaultStyle.Equal(state.DefaultStyle) {
+		r.applyStyle(ctx, &plan, &resp.Diagnostics)
+	}
 	r.refresh(ctx, &plan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
@@ -265,6 +284,38 @@ func (r *featureTypeResource) refresh(ctx context.Context, m *featureTypeModel, 
 		return
 	}
 	m.fromAPI(ft)
+	r.readStyle(ctx, m, diags)
+}
+
+// applyStyle assigns default_style to the layer when it is set.
+func (r *featureTypeResource) applyStyle(ctx context.Context, m *featureTypeModel, diags *diag.Diagnostics) {
+	if m.DefaultStyle.IsNull() || m.DefaultStyle.IsUnknown() || m.DefaultStyle.ValueString() == "" {
+		return
+	}
+	ref := geoserver.StyleRef{Name: m.DefaultStyle.ValueString()}
+	if ws, n, ok := strings.Cut(ref.Name, ":"); ok {
+		ref = geoserver.StyleRef{Name: n, Workspace: ws}
+	}
+	if err := r.client.SetLayerDefaultStyle(ctx, m.Workspace.ValueString(), m.Name.ValueString(), ref); err != nil {
+		diags.AddError("Error assigning default style", err.Error())
+	}
+}
+
+// readStyle fills default_style from the layer endpoint.
+func (r *featureTypeResource) readStyle(ctx context.Context, m *featureTypeModel, diags *diag.Diagnostics) {
+	ref, err := r.client.GetLayerDefaultStyle(ctx, m.Workspace.ValueString(), m.Name.ValueString())
+	if err != nil && !geoserver.IsNotFound(err) {
+		diags.AddError("Error reading layer default style", err.Error())
+		return
+	}
+	switch {
+	case ref == nil:
+		m.DefaultStyle = types.StringNull()
+	case ref.Workspace != "":
+		m.DefaultStyle = types.StringValue(ref.Workspace + ":" + ref.Name)
+	default:
+		m.DefaultStyle = types.StringValue(ref.Name)
+	}
 }
 
 // toAPI builds the fields sent on create and update. Unknown computed values
