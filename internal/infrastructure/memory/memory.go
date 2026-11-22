@@ -9,17 +9,21 @@ import (
 
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
+	"github.com/neocaos/geoform/internal/domain/layergroup"
+	"github.com/neocaos/geoform/internal/domain/style"
 	"github.com/neocaos/geoform/internal/domain/workspace"
 )
 
 // Store agrupa los tres repositorios sobre el mismo estado y registra las
 // operaciones de escritura en Writes (p. ej. "create workspace demo").
 type Store struct {
-	mu         sync.Mutex
-	Workspaces map[string]workspace.Workspace
-	Datastores map[string]datastore.Datastore // clave "ws/name"
-	Layers     map[string]layer.Layer         // clave "ws/store/name"
-	Writes     []string
+	mu          sync.Mutex
+	Workspaces  map[string]workspace.Workspace
+	Datastores  map[string]datastore.Datastore // clave "ws/name"
+	Layers      map[string]layer.Layer         // clave "ws/store/name"
+	Styles      map[string]style.Style         // clave "ws/name"
+	LayerGroups map[string]layergroup.Group    // clave "ws/name"
+	Writes      []string
 	// FailOn hace fallar la escritura cuyo registro coincida (para tests).
 	FailOn string
 }
@@ -27,9 +31,11 @@ type Store struct {
 // New crea un Store vacío.
 func New() *Store {
 	return &Store{
-		Workspaces: map[string]workspace.Workspace{},
-		Datastores: map[string]datastore.Datastore{},
-		Layers:     map[string]layer.Layer{},
+		Workspaces:  map[string]workspace.Workspace{},
+		Datastores:  map[string]datastore.Datastore{},
+		Layers:      map[string]layer.Layer{},
+		Styles:      map[string]style.Style{},
+		LayerGroups: map[string]layergroup.Group{},
 	}
 }
 

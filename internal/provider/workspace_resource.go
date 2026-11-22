@@ -28,6 +28,9 @@ var noSlashRegexp = regexp.MustCompile(`^[^/]+$`)
 // A CRS identifier such as EPSG:4326 or CRS:84.
 var srsRegexp = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*:[A-Za-z0-9_.]+$`)
 
+// A style reference: "style" (global) or "workspace:style".
+var styleRefRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*(:[A-Za-z_][A-Za-z0-9_.-]*)?$`)
+
 var (
 	_ resource.Resource                = (*workspaceResource)(nil)
 	_ resource.ResourceWithConfigure   = (*workspaceResource)(nil)

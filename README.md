@@ -31,7 +31,7 @@ Unknown keys and invalid values are reported all at once with their path
 | `--server` / `GEOSERVER_URL`            | plan, apply    | GeoServer URL (default `http://localhost:8080/geoserver`).               |
 | `--user` / `GEOSERVER_USERNAME`         | plan, apply    | REST user (default `admin`).                                             |
 | `--password` / `GEOSERVER_PASSWORD`     | plan, apply    | REST password; prefer the env var (flags show up in `ps`).               |
-| `--prune`                               | plan, apply    | Also delete datastores/layers missing from the file (off by default).    |
+| `--prune`                               | plan, apply    | Also delete datastores/layers/styles/groups missing from the file (off by default).    |
 | `--auto-approve`                        | apply          | Skip the confirmation prompt.                                            |
 | `--check-env`                           | validate       | Fail if a `password_env` variable is unset.                              |
 
@@ -53,6 +53,13 @@ Passwords are never read or written: each datastore gets
 layers without an `EPSG:<code>` SRS are skipped with a warning on stderr.
 Without `--output` the YAML goes to stdout; an existing file needs `--force`.
 
+Workspace styles (as inline `sld:`), layer groups and each layer's default
+style (`style:`) are imported too, so `plan --prune` never proposes deleting
+them. Styles that cannot be read as SLD, groups that include layers outside the
+imported workspace, and a global default style hidden by a workspace style of
+the same name are skipped with a warning (that style or group is then not
+managed, so `--prune` would delete a skipped style or group).
+
 Behaviour notes:
 
 - `--prune` only touches workspaces declared in the file (datastores and layers
@@ -64,6 +71,19 @@ Behaviour notes:
 - An optional `security:` section manages users, roles and data access rules
   (see [Security](#security-users-roles-and-access-rules)). Without it,
   security is never read or modified.
+- **Styles and layer groups.** A workspace may declare `styles` (SLD files
+  uploaded as workspace styles, from `file:` relative to the YAML or inline
+  `sld:`) and `layergroups` (`layers` are layers of that workspace, in drawing
+  order; optional `title` and `mode`, default `SINGLE`). A layer picks its
+  default style with `style:`: a plain name refers to a style declared in its
+  workspace, otherwise to an existing global style (e.g. `polygon`); a
+  `workspace:name` form is also accepted. Order of operations: styles, layers,
+  layer groups on create/update; with `--prune` groups, layers, styles and
+  datastores are deleted in that order (styles still assigned to a layer are
+  detached). GeoServer rewrites an SLD when storing it, so SLDs are compared
+  semantically (ignoring namespace prefixes, whitespace, comments and the
+  `Name` of `NamedLayer`/`UserStyle`/`FeatureTypeStyle`). A layer without
+  `style:` leaves GeoServer's default unmanaged.
 - Exit codes: `0` ok / plan without changes, `1` runtime error or apply
   declined, `2` plan with pending changes, `3` invalid config or usage.
 
@@ -153,6 +173,7 @@ matching layer automatically and computes the bounding boxes from the data.
 | `srs`               | string | Optional, e.g. `EPSG:4326`. Defaults to the table's native CRS.                         |
 | `projection_policy` | string | Optional: `FORCE_DECLARED`, `REPROJECT_TO_DECLARED` or `NONE`. Chosen by GeoServer if unset. |
 | `enabled`           | bool   | Optional, default `true`.                                                               |
+| `default_style`     | string | Optional: `<style>` (global) or `<workspace>:<style>`. Chosen by GeoServer if unset.   |
 | `id`                | string | Computed, `<workspace>/<datastore>/<name>`.                                             |
 
 Import with `terraform import geoserver_featuretype.roads acme/roads/roads`.
@@ -162,6 +183,38 @@ otherwise left alone. Unsetting `title`, `srs` or `projection_policy` keeps the
 current value rather than resetting it. Destroying a feature type also deletes
 its layer and removes it from any layer groups, since GeoServer cannot delete
 one without the other.
+
+**`geoserver_style`**
+
+An SLD style scoped to a workspace.
+
+| Attribute   | Type   | Notes                                                            |
+|-------------|--------|------------------------------------------------------------------|
+| `workspace` | string | Required. Changing it replaces the style.                        |
+| `name`      | string | Required. Changing it replaces the style.                        |
+| `sld`       | string | Required. Full SLD document, e.g. `file("roads.sld")`. Updated in place. |
+| `id`        | string | Computed, `<workspace>/<name>`.                                  |
+
+Import with `terraform import geoserver_style.roads acme/roads` (the `sld`
+shows up as a diff on the next plan only if its content really differs; GeoServer's
+re-serialization of the XML is ignored). Assign it to a layer with
+`default_style = "<workspace>:<name>"` on `geoserver_featuretype` (a plain
+`<name>` refers to a global style). Destroying a style detaches it from the
+layers that use it.
+
+**`geoserver_layer_group`**
+
+| Attribute   | Type         | Notes                                                                 |
+|-------------|--------------|-----------------------------------------------------------------------|
+| `workspace` | string       | Required. Changing it replaces the group.                             |
+| `name`      | string       | Required. Changing it replaces the group.                             |
+| `title`     | string       | Optional.                                                             |
+| `mode`      | string       | Optional, default `SINGLE`: `SINGLE`, `OPAQUE_CONTAINER`, `NAMED`, `CONTAINER` or `EO`. |
+| `layers`    | list(string) | Required. Layer names of the same workspace, in drawing order.        |
+| `id`        | string       | Computed, `<workspace>/<name>`.                                       |
+
+Import with `terraform import geoserver_layer_group.base acme/base`. Bounds are
+computed by GeoServer; each member keeps its current default style.
 
 ### Security: users, roles and access rules
 

@@ -1,6 +1,8 @@
 package storage_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -160,6 +162,84 @@ func TestParse_SecurityErrors(t *testing.T) {
 		_, err := storage.Parse(strings.NewReader(c.yaml), env(map[string]string{"PG_PASSWORD": "x"}))
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v (esperaba %q)", name, err, c.want)
+		}
+	}
+}
+
+func TestParse_StylesAndLayerGroups(t *testing.T) {
+	const cfg = `
+workspaces:
+  - name: demo
+    styles:
+      - name: rojo
+        sld: |
+          <StyledLayerDescriptor version="1.0.0"/>
+    layergroups:
+      - name: base
+        title: Base
+        mode: NAMED
+        layers: [cities]
+    datastores:
+      - name: pg
+        host: db
+        database: geoform
+        user: u
+        layers:
+          - name: cities
+            srs: EPSG:4326
+            style: rojo
+`
+	d, err := storage.Parse(strings.NewReader(cfg), env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Styles) != 1 || d.Styles[0].Workspace != "demo" || !strings.Contains(d.Styles[0].SLD, "StyledLayerDescriptor") {
+		t.Errorf("styles: %+v", d.Styles)
+	}
+	if len(d.LayerGroups) != 1 || d.LayerGroups[0].Mode != "NAMED" || d.LayerGroups[0].Layers[0] != "cities" {
+		t.Errorf("layergroups: %+v", d.LayerGroups)
+	}
+	if d.Layers[0].Style != "rojo" {
+		t.Errorf("layer style: %q", d.Layers[0].Style)
+	}
+}
+
+func TestLoadFile_StyleFileRelativeToConfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "styles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "styles", "a.sld"), []byte(`<StyledLayerDescriptor/>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := "workspaces:\n  - name: demo\n    styles:\n      - name: a\n        file: styles/a.sld\n"
+	path := filepath.Join(dir, "geoform.yaml")
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, err := storage.LoadFile(path, env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Styles) != 1 || d.Styles[0].SLD != `<StyledLayerDescriptor/>` {
+		t.Errorf("styles: %+v", d.Styles)
+	}
+}
+
+func TestParse_StyleAndGroupErrors(t *testing.T) {
+	cases := map[string]struct{ yaml, want string }{
+		"file y sld":  {"workspaces:\n  - name: d\n    styles:\n      - name: a\n        file: x.sld\n        sld: y\n", "usa file o sld, no ambos"},
+		"sin origen":  {"workspaces:\n  - name: d\n    styles:\n      - name: a\n", "file o sld es obligatorio"},
+		"file falta":  {"workspaces:\n  - name: d\n    styles:\n      - name: a\n        file: /no/existe.sld\n", "no se puede leer el SLD"},
+		"estilo dup":  {"workspaces:\n  - name: d\n    styles:\n      - {name: a, sld: x}\n      - {name: a, sld: x}\n", `estilo "a" duplicado`},
+		"grupo vacío": {"workspaces:\n  - name: d\n    layergroups:\n      - name: g\n", "al menos una capa"},
+		"modo malo":   {"workspaces:\n  - name: d\n    layergroups:\n      - {name: g, mode: X, layers: [a]}\n", "modo"},
+		"grupo dup":   {"workspaces:\n  - name: d\n    layergroups:\n      - {name: g, layers: [a]}\n      - {name: g, layers: [a]}\n", `grupo "g" duplicado`},
+	}
+	for name, c := range cases {
+		_, err := storage.Parse(strings.NewReader(c.yaml), env(nil))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want %q", name, err, c.want)
 		}
 	}
 }

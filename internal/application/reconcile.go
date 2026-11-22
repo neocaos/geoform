@@ -7,11 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
+	"strings"
 
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
+	"github.com/neocaos/geoform/internal/domain/layergroup"
 	"github.com/neocaos/geoform/internal/domain/security"
+	"github.com/neocaos/geoform/internal/domain/style"
 	"github.com/neocaos/geoform/internal/domain/workspace"
 )
 
@@ -23,6 +27,9 @@ type Desired struct {
 	Layers     []layer.Layer
 	// Security, si no es nil, activa la gestión de usuarios, roles y reglas.
 	Security *SecurityDesired
+	// Estilos y grupos de capas, con alcance de workspace.
+	Styles      []style.Style
+	LayerGroups []layergroup.Group
 }
 
 // Validate aplica las reglas de dominio y comprueba duplicados y referencias.
@@ -70,7 +77,60 @@ func (d Desired) Validate() error {
 	if d.Security != nil {
 		errs = append(errs, d.Security.validate(wss)...)
 	}
+	errs = append(errs, d.validateStylesAndGroups(wss, lys)...)
 	return errors.Join(errs...)
+}
+
+// validateStylesAndGroups valida estilos, grupos y las referencias a estilos
+// desde las capas. wss son los workspaces declarados y lys las capas.
+func (d Desired) validateStylesAndGroups(wss, lys map[string]bool) []error {
+	var errs []error
+	sts := map[string]bool{}
+	for _, st := range d.Styles {
+		k := st.Workspace + "/" + st.Name
+		if err := st.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("estilo %q: %w", k, err))
+		}
+		if sts[k] {
+			errs = append(errs, fmt.Errorf("estilo %q duplicado", k))
+		}
+		sts[k] = true
+		if !wss[st.Workspace] {
+			errs = append(errs, fmt.Errorf("estilo %q: el workspace %q no está declarado", k, st.Workspace))
+		}
+	}
+	// Una referencia "ws:nombre" al propio workspace de la capa debe estar
+	// declarada; un nombre sin prefijo no declarado se asume global.
+	for _, l := range d.Layers {
+		if ws, n, ok := strings.Cut(l.Style, ":"); ok && ws == l.Workspace && !sts[ws+"/"+n] {
+			errs = append(errs, fmt.Errorf("capa %q: el estilo %q no está declarado", l.Workspace+"/"+l.Store+"/"+l.Name, l.Style))
+		}
+	}
+	// Nombre de capa -> existe en el workspace (para los grupos).
+	inWS := map[string]bool{}
+	for _, l := range d.Layers {
+		inWS[l.Workspace+"/"+l.Name] = true
+	}
+	grps := map[string]bool{}
+	for _, g := range d.LayerGroups {
+		k := g.Workspace + "/" + g.Name
+		if err := g.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("grupo %q: %w", k, err))
+		}
+		if grps[k] {
+			errs = append(errs, fmt.Errorf("grupo %q duplicado", k))
+		}
+		grps[k] = true
+		if !wss[g.Workspace] {
+			errs = append(errs, fmt.Errorf("grupo %q: el workspace %q no está declarado", k, g.Workspace))
+		}
+		for _, ln := range g.Layers {
+			if !inWS[g.Workspace+"/"+ln] {
+				errs = append(errs, fmt.Errorf("grupo %q: la capa %q no está declarada en el workspace", k, ln))
+			}
+		}
+	}
+	return errs
 }
 
 // Action es el tipo de cambio de un recurso.
@@ -86,12 +146,14 @@ const (
 type Kind string
 
 const (
-	KindWorkspace Kind = "workspace"
-	KindDatastore Kind = "datastore"
-	KindLayer     Kind = "layer"
-	KindRole      Kind = "role"
-	KindUser      Kind = "user"
-	KindRule      Kind = "rule"
+	KindWorkspace  Kind = "workspace"
+	KindDatastore  Kind = "datastore"
+	KindLayer      Kind = "layer"
+	KindStyle      Kind = "style"
+	KindLayerGroup Kind = "layergroup"
+	KindRole       Kind = "role"
+	KindUser       Kind = "user"
+	KindRule       Kind = "rule"
 )
 
 // Change es un cambio concreto. Lleva el recurso deseado (en Create/Update)
@@ -99,17 +161,20 @@ const (
 type Change struct {
 	Action Action
 	Kind   Kind
-	// Address identifica el recurso: "ws", "ws/store" o "ws/store/layer".
+	// Address identifica el recurso: "ws", "ws/store", "ws/store/layer",
+	// "ws/style" o "ws/layergroup".
 	Address string
 	// Details describe qué cambia en un Update ("campo: antes -> después").
 	Details []string
 
-	Workspace workspace.Workspace
-	Datastore datastore.Datastore
-	Layer     layer.Layer
-	Role      string
-	User      security.User
-	Rule      security.Rule
+	Workspace  workspace.Workspace
+	Datastore  datastore.Datastore
+	Layer      layer.Layer
+	Style      style.Style
+	LayerGroup layergroup.Group
+	Role       string
+	User       security.User
+	Rule       security.Rule
 }
 
 // Plan es la lista ordenada de cambios necesarios; vacía si no hay diferencias.
@@ -135,12 +200,21 @@ type Reconciler struct {
 	ds  *datastore.Service
 	ly  *layer.Service
 	sec *security.Service
+	// Opcionales: ver WithStyles y WithLayerGroups.
+	st *style.Service
+	lg *layergroup.Service
 }
 
 // NewReconciler inyecta los servicios de dominio.
 func NewReconciler(ws *workspace.Service, ds *datastore.Service, ly *layer.Service) *Reconciler {
 	return &Reconciler{ws: ws, ds: ds, ly: ly}
 }
+
+// WithStyles habilita la gestión de estilos y devuelve el propio Reconciler.
+func (r *Reconciler) WithStyles(st *style.Service) *Reconciler { r.st = st; return r }
+
+// WithLayerGroups habilita la gestión de grupos de capas.
+func (r *Reconciler) WithLayerGroups(lg *layergroup.Service) *Reconciler { r.lg = lg; return r }
 
 // PlanOptions controla el cálculo del plan.
 type PlanOptions struct {
@@ -155,6 +229,13 @@ func (r *Reconciler) Plan(ctx context.Context, want Desired, opts PlanOptions) (
 	want = normalize(want)
 	if err := want.Validate(); err != nil {
 		return nil, fmt.Errorf("estado deseado inválido: %w", err)
+	}
+
+	if len(want.Styles) > 0 && r.st == nil {
+		return nil, errors.New("la configuración declara estilos pero el Reconciler no tiene servicio de estilos")
+	}
+	if len(want.LayerGroups) > 0 && r.lg == nil {
+		return nil, errors.New("la configuración declara grupos de capas pero el Reconciler no tiene servicio de grupos")
 	}
 
 	plan := &Plan{}
@@ -194,6 +275,23 @@ func (r *Reconciler) Plan(ctx context.Context, want Desired, opts PlanOptions) (
 		}
 	}
 
+	// Los estilos van antes que las capas, que pueden referenciarlos.
+	for _, st := range want.Styles {
+		addr := st.Workspace + "/" + st.Name
+		cur, err := r.st.Get(ctx, st.Workspace, st.Name)
+		switch {
+		case errors.Is(err, style.ErrNotFound):
+			plan.Changes = append(plan.Changes, Change{Action: Create, Kind: KindStyle, Address: addr, Style: st})
+		case err != nil:
+			return nil, fmt.Errorf("leyendo estilo %q: %w", addr, err)
+		default:
+			if !style.SameSLD(cur.SLD, st.SLD) {
+				plan.Changes = append(plan.Changes, Change{Action: Update, Kind: KindStyle, Address: addr, Style: st,
+					Details: []string{"sld: contenido modificado"}})
+			}
+		}
+	}
+
 	for _, l := range want.Layers {
 		addr := l.Workspace + "/" + l.Store + "/" + l.Name
 		cur, err := r.ly.Get(ctx, l.Workspace, l.Store, l.Name)
@@ -205,6 +303,21 @@ func (r *Reconciler) Plan(ctx context.Context, want Desired, opts PlanOptions) (
 		default:
 			if diff := diffLayer(*cur, l); len(diff) > 0 {
 				plan.Changes = append(plan.Changes, Change{Action: Update, Kind: KindLayer, Address: addr, Layer: l, Details: diff})
+			}
+		}
+	}
+
+	for _, g := range want.LayerGroups {
+		addr := g.Workspace + "/" + g.Name
+		cur, err := r.lg.Get(ctx, g.Workspace, g.Name)
+		switch {
+		case errors.Is(err, layergroup.ErrNotFound):
+			plan.Changes = append(plan.Changes, Change{Action: Create, Kind: KindLayerGroup, Address: addr, LayerGroup: g})
+		case err != nil:
+			return nil, fmt.Errorf("leyendo grupo %q: %w", addr, err)
+		default:
+			if diff := diffLayerGroup(*cur, g); len(diff) > 0 {
+				plan.Changes = append(plan.Changes, Change{Action: Update, Kind: KindLayerGroup, Address: addr, LayerGroup: g, Details: diff})
 			}
 		}
 	}
@@ -236,11 +349,16 @@ func (r *Reconciler) prune(ctx context.Context, want Desired, wsExists, dsExists
 		wantLy[l.Workspace+"/"+l.Store+"/"+l.Name] = true
 	}
 
-	var layers, stores []Change
+	var layers, stores, groups, styles []Change
 	for _, w := range want.Workspaces {
 		if !wsExists[w.Name] {
 			continue
 		}
+		extraG, extraS, err := r.pruneStylesAndGroups(ctx, want, w.Name)
+		if err != nil {
+			return nil, err
+		}
+		groups, styles = append(groups, extraG...), append(styles, extraS...)
 		names, err := r.ds.List(ctx, w.Name)
 		if err != nil {
 			return nil, fmt.Errorf("listando datastores de %q: %w", w.Name, err)
@@ -269,7 +387,49 @@ func (r *Reconciler) prune(ctx context.Context, want Desired, wsExists, dsExists
 			}
 		}
 	}
-	return append(layers, stores...), nil
+	// Orden: grupos, capas, estilos (ya sin capas que los usen), datastores.
+	out := append(groups, layers...)
+	out = append(out, styles...)
+	return append(out, stores...), nil
+}
+
+// pruneStylesAndGroups lista los estilos y grupos sobrantes de un workspace.
+func (r *Reconciler) pruneStylesAndGroups(ctx context.Context, want Desired, ws string) (groups, styles []Change, err error) {
+	if r.lg != nil {
+		wantG := map[string]bool{}
+		for _, g := range want.LayerGroups {
+			wantG[g.Workspace+"/"+g.Name] = true
+		}
+		names, err := r.lg.List(ctx, ws)
+		if err != nil {
+			return nil, nil, fmt.Errorf("listando grupos de %q: %w", ws, err)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			if !wantG[ws+"/"+n] {
+				groups = append(groups, Change{Action: Delete, Kind: KindLayerGroup, Address: ws + "/" + n,
+					LayerGroup: layergroup.Group{Workspace: ws, Name: n}})
+			}
+		}
+	}
+	if r.st != nil {
+		wantS := map[string]bool{}
+		for _, s := range want.Styles {
+			wantS[s.Workspace+"/"+s.Name] = true
+		}
+		names, err := r.st.List(ctx, ws)
+		if err != nil {
+			return nil, nil, fmt.Errorf("listando estilos de %q: %w", ws, err)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			if !wantS[ws+"/"+n] {
+				styles = append(styles, Change{Action: Delete, Kind: KindStyle, Address: ws + "/" + n,
+					Style: style.Style{Workspace: ws, Name: n}})
+			}
+		}
+	}
+	return groups, styles, nil
 }
 
 // Apply ejecuta los cambios del plan en orden. Se detiene en el primer error.
@@ -320,6 +480,26 @@ func (r *Reconciler) applyOne(ctx context.Context, c Change) error {
 		case Delete:
 			return ignoreNotFound(r.ly.Remove(ctx, c.Layer.Workspace, c.Layer.Store, c.Layer.Name), layer.ErrNotFound)
 		}
+	case KindStyle:
+		switch c.Action {
+		case Create:
+			_, err := r.st.Ensure(ctx, c.Style)
+			return err
+		case Update:
+			return r.st.Update(ctx, c.Style)
+		case Delete:
+			return ignoreNotFound(r.st.Remove(ctx, c.Style.Workspace, c.Style.Name), style.ErrNotFound)
+		}
+	case KindLayerGroup:
+		switch c.Action {
+		case Create:
+			_, err := r.lg.Ensure(ctx, c.LayerGroup)
+			return err
+		case Update:
+			return r.lg.Update(ctx, c.LayerGroup)
+		case Delete:
+			return ignoreNotFound(r.lg.Remove(ctx, c.LayerGroup.Workspace, c.LayerGroup.Name), layergroup.ErrNotFound)
+		}
 	}
 	return fmt.Errorf("cambio no soportado")
 }
@@ -339,12 +519,26 @@ func normalize(d Desired) Desired {
 		Datastores: append([]datastore.Datastore(nil), d.Datastores...),
 		Layers:     append([]layer.Layer(nil), d.Layers...),
 		Security:   d.Security,
+		Styles:     append([]style.Style(nil), d.Styles...),
+	}
+	for _, g := range d.LayerGroups {
+		g.Mode = g.EffectiveMode()
+		out.LayerGroups = append(out.LayerGroups, g)
+	}
+	declared := map[string]bool{}
+	for _, st := range d.Styles {
+		declared[st.Workspace+"/"+st.Name] = true
 	}
 	for i := range out.Datastores {
 		out.Datastores[i].PostGIS = normalizePostGIS(out.Datastores[i].PostGIS)
 	}
 	for i := range out.Layers {
 		out.Layers[i].Table = out.Layers[i].NativeTable()
+		// Un nombre sin prefijo que coincide con un estilo del workspace se
+		// refiere a ese estilo; si no, a uno global.
+		if l := out.Layers[i]; l.Style != "" && !strings.Contains(l.Style, ":") && declared[l.Workspace+"/"+l.Style] {
+			out.Layers[i].Style = l.Workspace + ":" + l.Style
+		}
 	}
 	return out
 }
@@ -392,5 +586,24 @@ func diffLayer(cur, want layer.Layer) []string {
 		add("title", cur.Title, want.Title)
 	}
 	add("srs", cur.SRS, want.SRS)
+	// Estilo vacío = no gestionado.
+	if want.Style != "" {
+		add("style", cur.Style, want.Style)
+	}
+	return out
+}
+
+func diffLayerGroup(cur, want layergroup.Group) []string {
+	var out []string
+	if cur.EffectiveMode() != want.EffectiveMode() {
+		out = append(out, fmt.Sprintf("mode: %q -> %q", cur.EffectiveMode(), want.EffectiveMode()))
+	}
+	// Título vacío = no gestionado.
+	if want.Title != "" && cur.Title != want.Title {
+		out = append(out, fmt.Sprintf("title: %q -> %q", cur.Title, want.Title))
+	}
+	if !reflect.DeepEqual(cur.Layers, want.Layers) {
+		out = append(out, fmt.Sprintf("layers: %v -> %v", cur.Layers, want.Layers))
+	}
 	return out
 }

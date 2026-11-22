@@ -5,6 +5,7 @@ package importer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -14,6 +15,8 @@ import (
 	"github.com/neocaos/geoform/internal/application"
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
+	"github.com/neocaos/geoform/internal/domain/layergroup"
+	"github.com/neocaos/geoform/internal/domain/style"
 	"github.com/neocaos/geoform/internal/domain/workspace"
 	gs "github.com/neocaos/geoform/internal/geoserver"
 )
@@ -26,6 +29,17 @@ type Source interface {
 	GetDataStore(ctx context.Context, workspace, name string) (*gs.DataStore, error)
 	ListFeatureTypes(ctx context.Context, workspace, store string) ([]string, error)
 	GetFeatureType(ctx context.Context, workspace, store, name string) (*gs.FeatureType, error)
+}
+
+// StyleSource es la parte opcional del cliente REST para importar estilos,
+// grupos de capas y el estilo por defecto de cada capa. Si el Source no la
+// implementa, esas secciones no se importan.
+type StyleSource interface {
+	ListStyles(ctx context.Context, workspace string) ([]string, error)
+	GetStyleSLD(ctx context.Context, workspace, name string) (string, error)
+	ListLayerGroups(ctx context.Context, workspace string) ([]string, error)
+	GetLayerGroup(ctx context.Context, workspace, name string) (*gs.LayerGroup, error)
+	GetLayerDefaultStyle(ctx context.Context, workspace, layer string) (*gs.StyleRef, error)
 }
 
 // Result es el estado importado y los avisos de lo que no se pudo representar.
@@ -110,8 +124,113 @@ func Import(ctx context.Context, src Source, only []string) (*Result, error) {
 				})
 			}
 		}
+		if ss, ok := src.(StyleSource); ok {
+			if err := importStyles(ctx, ss, wn, res, warn); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return res, nil
+}
+
+// importStyles lee los estilos y grupos de capas de wn y el estilo por defecto
+// de las capas ya importadas del workspace. Lo que no se puede representar se
+// omite con un aviso. Un error de API (p. ej. un estilo que no es SLD) es un
+// aviso; un error de red o de decodificación aborta la importación.
+func importStyles(ctx context.Context, src StyleSource, wn string, res *Result, warn func(string, ...any)) error {
+	d := &res.Desired
+	names, err := src.ListStyles(ctx, wn)
+	if err != nil {
+		return fmt.Errorf("listando estilos de %q: %w", wn, err)
+	}
+	sort.Strings(names)
+	wsStyles := map[string]bool{}
+	for _, n := range names {
+		if !namePattern.MatchString(n) {
+			warn("estilo %s/%s omitido: nombre no válido para la configuración", wn, n)
+			continue
+		}
+		sld, err := src.GetStyleSLD(ctx, wn, n)
+		var apiErr *gs.APIError
+		if errors.As(err, &apiErr) {
+			warn("estilo %s/%s omitido: no se pudo leer como SLD (%d)", wn, n, apiErr.StatusCode)
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("leyendo estilo %s/%s: %w", wn, n, err)
+		}
+		st := style.Style{Workspace: wn, Name: n, SLD: sld}
+		if err := st.Validate(); err != nil {
+			warn("estilo %s/%s omitido: %v", wn, n, err)
+			continue
+		}
+		wsStyles[n] = true
+		d.Styles = append(d.Styles, st)
+	}
+
+	inWS := map[string]bool{}
+	for i, l := range d.Layers {
+		if l.Workspace != wn {
+			continue
+		}
+		inWS[l.Name] = true
+		ref, err := src.GetLayerDefaultStyle(ctx, wn, l.Name)
+		if err != nil && !gs.IsNotFound(err) {
+			return fmt.Errorf("leyendo estilo de la capa %s/%s: %w", wn, l.Name, err)
+		}
+		if ref == nil {
+			continue
+		}
+		switch {
+		case ref.Workspace == wn && wsStyles[ref.Name]:
+			d.Layers[i].Style = ref.Name
+		case ref.Workspace == wn:
+			warn("capa %s/%s: su estilo %q no se importó; queda sin gestionar", wn, l.Name, ref.Name)
+		case ref.Workspace != "":
+			d.Layers[i].Style = ref.Workspace + ":" + ref.Name
+		case wsStyles[ref.Name]:
+			// Un nombre sin prefijo se resolvería al estilo del workspace.
+			warn("capa %s/%s: el estilo global %q queda oculto por un estilo del workspace con el mismo nombre; queda sin gestionar", wn, l.Name, ref.Name)
+		default:
+			d.Layers[i].Style = ref.Name
+		}
+	}
+
+	groups, err := src.ListLayerGroups(ctx, wn)
+	if err != nil {
+		return fmt.Errorf("listando grupos de capas de %q: %w", wn, err)
+	}
+	sort.Strings(groups)
+	for _, gn := range groups {
+		if !namePattern.MatchString(gn) {
+			warn("grupo %s/%s omitido: nombre no válido para la configuración", wn, gn)
+			continue
+		}
+		g, err := src.GetLayerGroup(ctx, wn, gn)
+		if err != nil {
+			return fmt.Errorf("leyendo grupo %s/%s: %w", wn, gn, err)
+		}
+		grp := layergroup.Group{Workspace: wn, Name: gn, Title: g.Title, Mode: g.Mode}
+		ok := true
+		for _, l := range g.Layers {
+			local := strings.TrimPrefix(l, wn+":")
+			if !inWS[local] {
+				warn("grupo %s/%s omitido: contiene %q, que no es una capa importada del workspace", wn, gn, l)
+				ok = false
+				break
+			}
+			grp.Layers = append(grp.Layers, local)
+		}
+		if !ok {
+			continue
+		}
+		if err := grp.Validate(); err != nil {
+			warn("grupo %s/%s omitido: %v", wn, gn, err)
+			continue
+		}
+		d.LayerGroups = append(d.LayerGroups, grp)
+	}
+	return nil
 }
 
 // toDatastore devuelve el datastore PostGIS o el motivo por el que no se puede
