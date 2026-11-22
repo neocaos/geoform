@@ -37,6 +37,22 @@ Unknown keys and invalid values are reported all at once with their path
 
 Datastore passwords are never written in the file: use `password_env: VAR`.
 
+### `geoform import`
+
+Reads an existing GeoServer (workspaces, PostGIS datastores and their layers)
+and writes the YAML that `plan` would see as "no changes":
+
+```sh
+./geoform import --output geoform.yaml [--workspace demo,other] [--force]
+export GEOFORM_DEMO_POSTGIS_PASSWORD=...   # one placeholder per datastore
+./geoform plan --file geoform.yaml          # -> no changes
+```
+
+Passwords are never read or written: each datastore gets
+`password_env: GEOFORM_<WORKSPACE>_<DATASTORE>_PASSWORD`. Non-PostGIS stores and
+layers without an `EPSG:<code>` SRS are skipped with a warning on stderr.
+Without `--output` the YAML goes to stdout; an existing file needs `--force`.
+
 Behaviour notes:
 
 - `--prune` only touches workspaces declared in the file (datastores and layers

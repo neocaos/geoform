@@ -14,6 +14,7 @@ import (
 	"github.com/neocaos/geoform/internal/domain/workspace"
 	gs "github.com/neocaos/geoform/internal/geoserver"
 	gsrepo "github.com/neocaos/geoform/internal/infrastructure/geoserver"
+	"github.com/neocaos/geoform/internal/infrastructure/importer"
 )
 
 // Códigos de salida.
@@ -36,6 +37,8 @@ type Env struct {
 	Getenv func(string) string
 	// NewReconciler construye el reconciliador para una conexión.
 	NewReconciler func(Conn) *application.Reconciler
+	// NewSource construye el lector de GeoServer para import; nil usa el cliente REST.
+	NewSource func(Conn) importer.Source
 }
 
 // DefaultEnv devuelve el entorno real del proceso.
@@ -59,6 +62,7 @@ Comandos:
   validate   Comprueba el fichero de configuración (no contacta con GeoServer)
   plan       Muestra los cambios necesarios sin aplicarlos
   apply      Aplica los cambios (idempotente)
+  import     Lee un GeoServer existente y genera el YAML (--output, --workspace, --force)
 
 Opciones comunes (plan, apply):
   --file      Fichero YAML (por defecto geoform.yaml)
@@ -86,6 +90,8 @@ func Run(e Env) int {
 		return runPlan(e, args)
 	case "apply":
 		return runApply(e, args)
+	case "import":
+		return runImport(e, args)
 	case "help", "-h", "--help":
 		fmt.Fprint(e.Stdout, usage)
 		return ExitOK

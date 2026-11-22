@@ -44,25 +44,25 @@ type fileConfig struct {
 type fileWorkspace struct {
 	Name       string          `yaml:"name"`
 	Isolated   bool            `yaml:"isolated"`
-	Datastores []fileDatastore `yaml:"datastores"`
+	Datastores []fileDatastore `yaml:"datastores,omitempty"`
 }
 
 type fileDatastore struct {
 	Name        string      `yaml:"name"`
 	Host        string      `yaml:"host"`
-	Port        int         `yaml:"port"`
+	Port        int         `yaml:"port,omitempty"`
 	Database    string      `yaml:"database"`
-	Schema      string      `yaml:"schema"`
+	Schema      string      `yaml:"schema,omitempty"`
 	User        string      `yaml:"user"`
-	Password    string      `yaml:"password"`
-	PasswordEnv string      `yaml:"password_env"`
-	Layers      []fileLayer `yaml:"layers"`
+	Password    string      `yaml:"password,omitempty"`
+	PasswordEnv string      `yaml:"password_env,omitempty"`
+	Layers      []fileLayer `yaml:"layers,omitempty"`
 }
 
 type fileLayer struct {
 	Name  string `yaml:"name"`
-	Table string `yaml:"table"`
-	Title string `yaml:"title"`
+	Table string `yaml:"table,omitempty"`
+	Title string `yaml:"title,omitempty"`
 	SRS   string `yaml:"srs"`
 }
 
