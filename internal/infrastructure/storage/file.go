@@ -266,7 +266,7 @@ func buildStyles(out *application.Desired, w fileWorkspace, wp, baseDir string,
 			if !filepath.IsAbs(p) {
 				p = filepath.Join(baseDir, p)
 			}
-			b, err := os.ReadFile(p)
+			b, err := os.ReadFile(p) // #nosec G304 -- el YAML es configuración de confianza; la ruta del SLD la elige quien lo escribe
 			if err != nil {
 				bad(sp+".file", "no se puede leer el SLD: %v", err)
 				continue
