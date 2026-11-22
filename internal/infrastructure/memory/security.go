@@ -198,3 +198,15 @@ func (s *SecurityStore) DeleteRule(_ context.Context, r security.Rule) error {
 	delete(s.Rules, r.Key())
 	return nil
 }
+
+// PasswordMatches implementa security.PasswordVerifier comparando con la
+// contraseña guardada.
+func (s *SecurityStore) PasswordMatches(_ context.Context, n, password string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.Users[n]
+	if !ok {
+		return false, security.ErrNotFound
+	}
+	return u.Password == password, nil
+}

@@ -113,3 +113,8 @@ func (r *SecurityRepository) SaveRule(ctx context.Context, rule security.Rule) e
 func (r *SecurityRepository) DeleteRule(ctx context.Context, rule security.Rule) error {
 	return notFound(r.c.DeleteLayerRule(ctx, rule.Key()))
 }
+
+// PasswordMatches implementa security.PasswordVerifier probando el login real.
+func (r *SecurityRepository) PasswordMatches(ctx context.Context, name, password string) (bool, error) {
+	return r.c.CheckCredentials(ctx, name, password)
+}

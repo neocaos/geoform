@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Los módulos de HashiCorp (plugin framework, go, testing) se actualizan juntos.
+      hashicorp:
+        patterns: ["github.com/hashicorp/*"]
+      golang-x:
+        patterns: ["golang.org/x/*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

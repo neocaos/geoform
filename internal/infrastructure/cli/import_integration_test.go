@@ -12,14 +12,15 @@ import (
 
 	gs "github.com/neocaos/geoform/internal/geoserver"
 	"github.com/neocaos/geoform/internal/infrastructure/cli"
+	"github.com/neocaos/geoform/internal/testenv"
 )
 
 // import sobre un GeoServer real y plan posterior: no debe haber diff.
 func TestIntegration_ImportRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	url := itEnv("GEOSERVER_URL", "http://localhost:18080/geoserver")
-	user := itEnv("GEOSERVER_USER", "admin")
-	pass := itEnv("GEOSERVER_PASS", "geoserver")
+	url := testenv.URL()
+	user := testenv.User()
+	pass := testenv.Pass()
 	client := gs.NewClient(url, user, pass)
 
 	const ws = "geoform_import_it"

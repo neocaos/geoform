@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 
-	gs "github.com/neocaos/geoform/internal/geoserver"
 	"github.com/neocaos/geoform/internal/infrastructure/importer"
 	"github.com/neocaos/geoform/internal/infrastructure/storage"
 )
@@ -41,11 +40,15 @@ func runImport(e Env, args []string) int {
 	ctx, stop := signalContext()
 	defer stop()
 	conn := c.conn()
+	if code := checkConn(e, conn); code != ExitOK {
+		return code
+	}
 	var src importer.Source
 	if e.NewSource != nil {
 		src = e.NewSource(conn)
 	} else {
-		src = gs.NewClient(conn.URL, conn.User, conn.Password)
+		client, _ := newClient(conn) // validado en checkConn
+		src = client
 	}
 	res, err := importer.Import(ctx, src, filter)
 	if err != nil {
@@ -65,7 +68,7 @@ func runImport(e Env, args []string) int {
 		_, _ = e.Stdout.Write(data)
 		return ExitOK
 	}
-	if err := os.WriteFile(*out, data, 0o644); err != nil {
+	if err := os.WriteFile(*out, data, 0o600); err != nil {
 		fmt.Fprintf(e.Stderr, "Error escribiendo %s: %v\n", *out, err)
 		return ExitError
 	}

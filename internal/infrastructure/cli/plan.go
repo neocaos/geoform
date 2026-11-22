@@ -18,6 +18,9 @@ func prepare(ctx context.Context, e Env, c *commonFlags, prune bool) (*applicati
 		fmt.Fprintf(e.Stderr, "Configuración inválida:\n%v\n", err)
 		return nil, nil, ExitInvalidArg
 	}
+	if code := checkConn(e, c.conn()); code != ExitOK {
+		return nil, nil, code
+	}
 	r := e.NewReconciler(c.conn())
 	plan, err := r.Plan(ctx, desired, application.PlanOptions{Prune: prune})
 	if err != nil {

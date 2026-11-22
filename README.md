@@ -394,11 +394,11 @@ make test               # unitarios, sin Docker
 make test-integration   # levanta docker-compose.test.yml, ejecuta go test -tags=integration y hace down -v
 ```
 
-El stack de tests usa puertos `18080` (GeoServer) y `15432` (PostGIS) para no chocar con el de dev.
-Los tests de integración crean un workspace, un datastore PostGIS y publican las tres tablas como
-capas (todo vía `Ensure`, ejecutado dos veces para comprobar idempotencia), verifican por REST y limpian.
-Se pueden apuntar a otro GeoServer con `GEOSERVER_URL` (por defecto `http://localhost:18080/geoserver/rest`),
-`GEOSERVER_USER` y `GEOSERVER_PASS`. `make stack-up` / `make stack-down` levantan/borran el stack de tests a mano.
+Cada ejecución de `make test-integration` usa un proyecto de compose único y puertos libres, y elimina
+el stack siempre, así que varias ejecuciones en paralelo no se pisan. Los tests leen `GEOSERVER_URL`,
+`GEOSERVER_USER` y `GEOSERVER_PASS` (los exporta `scripts/integration.sh`). Variables, tests de seguridad,
+postura de seguridad de la CLI y limitaciones conocidas: [docs/testing.md](docs/testing.md).
+`make stack-up` / `make stack-down` levantan/borran el stack de tests a mano.
 
 ## License
 
