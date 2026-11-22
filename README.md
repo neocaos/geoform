@@ -53,6 +53,13 @@ Passwords are never read or written: each datastore gets
 layers without an `EPSG:<code>` SRS are skipped with a warning on stderr.
 Without `--output` the YAML goes to stdout; an existing file needs `--force`.
 
+Workspace styles (as inline `sld:`), layer groups and each layer's default
+style (`style:`) are imported too, so `plan --prune` never proposes deleting
+them. Styles that cannot be read as SLD, groups that include layers outside the
+imported workspace, and a global default style hidden by a workspace style of
+the same name are skipped with a warning (that style or group is then not
+managed, so `--prune` would delete a skipped style or group).
+
 Behaviour notes:
 
 - `--prune` only touches workspaces declared in the file (datastores and layers
