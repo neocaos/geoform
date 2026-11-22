@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ErrNotFound se devuelve cuando el datastore no existe.
@@ -20,11 +21,40 @@ type PostGIS struct {
 	Password string
 }
 
-// Datastore es un origen de datos PostGIS publicado en un workspace.
+// Type es el tipo de origen de datos vectorial de un datastore.
+type Type string
+
+const (
+	// TypePostGIS es el tipo por defecto (el valor vacío equivale a este).
+	TypePostGIS Type = "postgis"
+	// TypeGeoPackage es un fichero GeoPackage (.gpkg) con capas vectoriales.
+	TypeGeoPackage Type = "geopackage"
+	// TypeShapefile es un shapefile (.shp) o un directorio de shapefiles.
+	TypeShapefile Type = "shapefile"
+)
+
+// Datastore es un origen de datos vectorial publicado en un workspace. Según
+// Type se usa PostGIS (conexión a base de datos) o File (URL de GeoServer del
+// fichero, p. ej. "file:/data/places.gpkg").
 type Datastore struct {
 	Workspace string
 	Name      string
+	Type      Type
 	PostGIS   PostGIS
+	File      string
+}
+
+// Kind devuelve el tipo efectivo: el valor vacío es PostGIS.
+func (d Datastore) Kind() Type {
+	if d.Type == "" {
+		return TypePostGIS
+	}
+	return d.Type
+}
+
+// IsFile indica si el datastore se define por un fichero en vez de por una conexión.
+func (d Datastore) IsFile() bool {
+	return d.Kind() == TypeGeoPackage || d.Kind() == TypeShapefile
 }
 
 // Validate aplica las reglas mínimas de la entidad.
@@ -34,10 +64,24 @@ func (d Datastore) Validate() error {
 		return errors.New("datastore: el workspace no puede estar vacío")
 	case d.Name == "":
 		return errors.New("datastore: el nombre no puede estar vacío")
+	case d.IsFile():
+		return d.validateFile()
+	case d.Kind() != TypePostGIS:
+		return fmt.Errorf("datastore: tipo %q no soportado", d.Type)
 	case d.PostGIS.Host == "" || d.PostGIS.Database == "" || d.PostGIS.User == "":
 		return errors.New("datastore: host, database y user son obligatorios")
 	case d.PostGIS.Port < 0 || d.PostGIS.Port > 65535:
 		return fmt.Errorf("datastore: puerto inválido %d", d.PostGIS.Port)
+	}
+	return nil
+}
+
+func (d Datastore) validateFile() error {
+	if strings.TrimSpace(d.File) == "" {
+		return fmt.Errorf("datastore: file es obligatorio para el tipo %s", d.Kind())
+	}
+	if d.PostGIS != (PostGIS{}) {
+		return fmt.Errorf("datastore: los parámetros de PostGIS no aplican al tipo %s", d.Kind())
 	}
 	return nil
 }

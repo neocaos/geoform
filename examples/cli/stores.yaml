@@ -1,0 +1,31 @@
+# Datastores de fichero y raster para la CLI `geoform`.
+# Las rutas son URLs vistas desde GeoServer (no desde la máquina que ejecuta
+# geoform). Con `make up` los ficheros de test/testdata/stores están en /data/stores.
+#   geoform plan --file examples/cli/stores.yaml
+workspaces:
+  - name: demo_files
+    datastores:
+      - name: gpkg
+        type: geopackage
+        file: file:/data/stores/places.gpkg
+        layers:
+          - name: gpkg_places
+            table: places            # tabla del GeoPackage
+            title: Lugares (gpkg)
+            srs: EPSG:4326
+      - name: shp
+        type: shapefile
+        file: file:/data/stores/places.shp
+        layers:
+          - name: shp_places
+            table: places            # nombre del .shp sin extensión
+            srs: EPSG:4326
+    coveragestores:
+      - name: dem
+        type: geotiff                # opcional, único valor soportado
+        url: file:/data/stores/dem.tif
+        coverages:
+          - name: relieve
+            native_name: dem         # opcional, por defecto el nombre
+            title: Relieve
+            srs: EPSG:4326

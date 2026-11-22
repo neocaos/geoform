@@ -62,10 +62,14 @@ func (r *DatastoreRepository) Get(ctx context.Context, ws, name string) (*datast
 	if err != nil {
 		return nil, err
 	}
+	if d, ok := fileDatastore(ws, ds); ok {
+		return d, nil
+	}
 	port, _ := strconv.Atoi(ds.ConnectionParameters["port"])
 	return &datastore.Datastore{
 		Workspace: ws,
 		Name:      ds.Name,
+		Type:      datastore.TypePostGIS,
 		PostGIS: datastore.PostGIS{
 			Host:     ds.ConnectionParameters["host"],
 			Port:     port,
@@ -108,12 +112,7 @@ func postgisParams(p datastore.PostGIS) map[string]string {
 }
 
 func (r *DatastoreRepository) Create(ctx context.Context, d datastore.Datastore) error {
-	return r.c.CreateDataStore(ctx, d.Workspace, gs.DataStore{
-		Name:                 d.Name,
-		Type:                 "PostGIS",
-		Enabled:              true,
-		ConnectionParameters: postgisParams(d.PostGIS),
-	})
+	return r.c.CreateDataStore(ctx, d.Workspace, newDataStore(d))
 }
 
 // Update conserva los parámetros que Geoform no gestiona (pools, etc.) y
@@ -126,11 +125,17 @@ func (r *DatastoreRepository) Update(ctx context.Context, d datastore.Datastore)
 	if err != nil {
 		return err
 	}
+	if curKind := kindOf(cur); curKind != d.Kind() {
+		// Cambio de tipo: los parámetros del tipo anterior no sirven.
+		repl := newDataStore(d)
+		repl.Description = cur.Description
+		return r.c.UpdateDataStore(ctx, d.Workspace, d.Name, repl)
+	}
 	params := gs.ConnectionParameters{}
 	for k, v := range cur.ConnectionParameters {
 		params[k] = v
 	}
-	for k, v := range postgisParams(d.PostGIS) {
+	for k, v := range managedParams(d) {
 		params[k] = v
 	}
 	cur.ConnectionParameters = params

@@ -36,6 +36,8 @@ services:
       - "${GEOSERVER_PORT:-8080}:8080"
     volumes:
       - geoserver_data:/opt/geoserver/data_dir
+      # Fixtures de ficheros (GeoPackage, shapefile, GeoTIFF), visibles en /data/stores.
+      - ./test/testdata/stores:/data/stores:ro
     depends_on:
       db:
         condition: service_healthy
