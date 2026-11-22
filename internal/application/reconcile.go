@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/neocaos/geoform/internal/domain/coverage"
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
 	"github.com/neocaos/geoform/internal/domain/layergroup"
@@ -30,6 +31,9 @@ type Desired struct {
 	// Estilos y grupos de capas, con alcance de workspace.
 	Styles      []style.Style
 	LayerGroups []layergroup.Group
+	// Almacenes raster y sus coverages (requieren Reconciler.WithCoverage).
+	CoverageStores []coverage.Store
+	Coverages      []coverage.Coverage
 }
 
 // Validate aplica las reglas de dominio y comprueba duplicados y referencias.
@@ -78,6 +82,7 @@ func (d Desired) Validate() error {
 		errs = append(errs, d.Security.validate(wss)...)
 	}
 	errs = append(errs, d.validateStylesAndGroups(wss, lys)...)
+	errs = append(errs, d.validateCoverages(wss, lys)...)
 	return errors.Join(errs...)
 }
 
@@ -110,6 +115,9 @@ func (d Desired) validateStylesAndGroups(wss, lys map[string]bool) []error {
 	inWS := map[string]bool{}
 	for _, l := range d.Layers {
 		inWS[l.Workspace+"/"+l.Name] = true
+	}
+	for _, c := range d.Coverages {
+		inWS[c.Workspace+"/"+c.Name] = true
 	}
 	grps := map[string]bool{}
 	for _, g := range d.LayerGroups {
@@ -154,6 +162,9 @@ const (
 	KindRole       Kind = "role"
 	KindUser       Kind = "user"
 	KindRule       Kind = "rule"
+	// Raster: almacenes (GeoTIFF) y sus coverages.
+	KindCoverageStore Kind = "coveragestore"
+	KindCoverage      Kind = "coverage"
 )
 
 // Change es un cambio concreto. Lleva el recurso deseado (en Create/Update)
@@ -175,6 +186,9 @@ type Change struct {
 	Role       string
 	User       security.User
 	Rule       security.Rule
+
+	CoverageStore coverage.Store
+	Coverage      coverage.Coverage
 }
 
 // Plan es la lista ordenada de cambios necesarios; vacía si no hay diferencias.
@@ -203,6 +217,7 @@ type Reconciler struct {
 	// Opcionales: ver WithStyles y WithLayerGroups.
 	st *style.Service
 	lg *layergroup.Service
+	cv *coverage.Service // opcional: sin él no se gestiona raster
 }
 
 // NewReconciler inyecta los servicios de dominio.
@@ -307,6 +322,12 @@ func (r *Reconciler) Plan(ctx context.Context, want Desired, opts PlanOptions) (
 		}
 	}
 
+	// Antes de los grupos: pueden incluir coverages.
+	csExists, err := r.planCoverages(ctx, want, plan)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, g := range want.LayerGroups {
 		addr := g.Workspace + "/" + g.Name
 		cur, err := r.lg.Get(ctx, g.Workspace, g.Name)
@@ -322,9 +343,12 @@ func (r *Reconciler) Plan(ctx context.Context, want Desired, opts PlanOptions) (
 		}
 	}
 
+	var rasterLayers, rasterStores []Change
 	if opts.Prune {
-		var err error
 		if deletes, err = r.prune(ctx, want, wsExists, dsExists); err != nil {
+			return nil, err
+		}
+		if rasterLayers, rasterStores, err = r.pruneCoverages(ctx, want, wsExists, csExists); err != nil {
 			return nil, err
 		}
 	}
@@ -333,7 +357,11 @@ func (r *Reconciler) Plan(ctx context.Context, want Desired, opts PlanOptions) (
 		return nil, err
 	}
 	deletes = append(deletes, secDeletes...)
+	// Orden de borrado: primero lo vectorial (grupos incluidos, que pueden
+	// referenciar coverages), luego las coverages y por último sus almacenes.
 	plan.Changes = append(plan.Changes, deletes...)
+	plan.Changes = append(plan.Changes, rasterLayers...)
+	plan.Changes = append(plan.Changes, rasterStores...)
 	return plan, nil
 }
 
@@ -470,6 +498,8 @@ func (r *Reconciler) applyOne(ctx context.Context, c Change) error {
 		case Delete:
 			return ignoreNotFound(r.ds.Remove(ctx, c.Datastore.Workspace, c.Datastore.Name, true), datastore.ErrNotFound)
 		}
+	case KindCoverageStore, KindCoverage:
+		return r.applyCoverage(ctx, c)
 	case KindLayer:
 		switch c.Action {
 		case Create:
@@ -520,6 +550,9 @@ func normalize(d Desired) Desired {
 		Layers:     append([]layer.Layer(nil), d.Layers...),
 		Security:   d.Security,
 		Styles:     append([]style.Style(nil), d.Styles...),
+
+		CoverageStores: append([]coverage.Store(nil), d.CoverageStores...),
+		Coverages:      append([]coverage.Coverage(nil), d.Coverages...),
 	}
 	for _, g := range d.LayerGroups {
 		g.Mode = g.EffectiveMode()
@@ -530,7 +563,10 @@ func normalize(d Desired) Desired {
 		declared[st.Workspace+"/"+st.Name] = true
 	}
 	for i := range out.Datastores {
-		out.Datastores[i].PostGIS = normalizePostGIS(out.Datastores[i].PostGIS)
+		out.Datastores[i].Type = out.Datastores[i].Kind()
+		if !out.Datastores[i].IsFile() {
+			out.Datastores[i].PostGIS = normalizePostGIS(out.Datastores[i].PostGIS)
+		}
 	}
 	for i := range out.Layers {
 		out.Layers[i].Table = out.Layers[i].NativeTable()
@@ -557,13 +593,23 @@ func normalizePostGIS(p datastore.PostGIS) datastore.PostGIS {
 // GeoServer no lo devuelve en claro, así que un cambio solo de password no se
 // detecta (se aplica cuando cambia algo más).
 func diffDatastore(cur, want datastore.Datastore) []string {
-	c, w := normalizePostGIS(cur.PostGIS), want.PostGIS
 	var out []string
 	add := func(field string, a, b any) {
 		if a != b {
 			out = append(out, fmt.Sprintf("%s: %v -> %v", field, a, b))
 		}
 	}
+	if cur.Kind() != want.Kind() {
+		add("type", cur.Kind(), want.Kind())
+		if want.IsFile() {
+			add("file", cur.File, want.File)
+			return out
+		}
+	} else if want.IsFile() {
+		add("file", cur.File, want.File)
+		return out
+	}
+	c, w := normalizePostGIS(cur.PostGIS), want.PostGIS
 	add("host", c.Host, w.Host)
 	add("port", c.Port, w.Port)
 	add("database", c.Database, w.Database)

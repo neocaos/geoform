@@ -5,7 +5,8 @@ configuration as code, with plans, state, drift detection and imports handled by
 Terraform.
 
 > Status: early development. Available: `geoserver_workspace`, `geoserver_postgis_datastore`,
-> `geoserver_featuretype`.
+> `geoserver_featuretype`, `geoserver_geopackage_datastore`, `geoserver_shapefile_datastore`,
+> `geoserver_geotiff_coveragestore`, `geoserver_coverage`.
 
 ## `geoform` CLI
 
@@ -37,9 +38,16 @@ Unknown keys and invalid values are reported all at once with their path
 
 Datastore passwords are never written in the file: use `password_env: VAR`.
 
+Besides PostGIS, the file can declare file-based stores (see
+[Other store types](#other-store-types) and
+[`examples/cli/stores.yaml`](examples/cli/stores.yaml)): `type: geopackage` or
+`type: shapefile` datastores with a `file:` URL, and raster `coveragestores:`
+(GeoTIFF) with their `coverages:`. They take part in `plan`, `apply` and
+`--prune` like any other resource.
+
 ### `geoform import`
 
-Reads an existing GeoServer (workspaces, PostGIS datastores and their layers)
+Reads an existing GeoServer (workspaces, PostGIS/GeoPackage/shapefile datastores, GeoTIFF coverage stores and their layers)
 and writes the YAML that `plan` would see as "no changes":
 
 ```sh
@@ -49,8 +57,11 @@ export GEOFORM_DEMO_POSTGIS_PASSWORD=...   # one placeholder per datastore
 ```
 
 Passwords are never read or written: each datastore gets
-`password_env: GEOFORM_<WORKSPACE>_<DATASTORE>_PASSWORD`. Non-PostGIS stores and
-layers without an `EPSG:<code>` SRS are skipped with a warning on stderr.
+`password_env: GEOFORM_<WORKSPACE>_<DATASTORE>_PASSWORD`. GeoPackage and shapefile
+datastores (`type:` + `file:`) and GeoTIFF coverage stores with their coverages are
+imported without any connection data, so `plan --prune` never proposes deleting
+them. Other store types (e.g. ImageMosaic) and layers or coverages without an
+`EPSG:<code>` SRS are skipped with a warning on stderr.
 Without `--output` the YAML goes to stdout; an existing file needs `--force`.
 
 Workspace styles (as inline `sld:`), layer groups and each layer's default
@@ -261,6 +272,55 @@ Behaviour notes:
   the file, and rules of the declared workspaces. It never deletes the `admin`
   user, the `ADMIN`/`GROUP_ADMIN` roles, global rules (`*.*.r`) or rules of
   workspaces not in the file.
+
+### Other store types
+
+GeoServer reads these files from *its own* filesystem, so the paths are URLs as
+GeoServer sees them (`file:/data/places.gpkg`, or `file:data/places.gpkg`
+relative to the data directory), never paths on the machine running Terraform or
+`geoform`. Geoform does not upload or purge files; it only registers them.
+
+| Format      | Terraform resource                | CLI YAML                                   | Published as                              |
+|-------------|-----------------------------------|--------------------------------------------|-------------------------------------------|
+| PostGIS     | `geoserver_postgis_datastore`     | datastore (default `type: postgis`)        | `geoserver_featuretype` / `layers:`       |
+| GeoPackage  | `geoserver_geopackage_datastore`  | datastore `type: geopackage`, `file:`      | `geoserver_featuretype` / `layers:`       |
+| Shapefile   | `geoserver_shapefile_datastore`   | datastore `type: shapefile`, `file:`       | `geoserver_featuretype` / `layers:`       |
+| GeoTIFF     | `geoserver_geotiff_coveragestore` | `coveragestores:` entry, `url:`            | `geoserver_coverage` / `coverages:`       |
+
+**`geoserver_geopackage_datastore`** and **`geoserver_shapefile_datastore`** (vector;
+GeoPackage *raster* tiles are not supported) share one schema: `workspace`, `name`
+(both replace on change), `description`, `enabled` (default `true`), `file`
+(required) and the computed `id` (`<workspace>/<name>`). Layers are published
+with `geoserver_featuretype`: `native_name` is the GeoPackage table, or the
+shapefile name without extension. Parameters the resource does not manage are
+preserved on update. Import with `terraform import <addr> <workspace>/<name>`.
+
+**`geoserver_geotiff_coveragestore`**: `workspace`, `name`, `description`,
+`enabled`, `url` (required) and `id`. Destroying it never purges the file and
+GeoServer refuses if coverages remain.
+
+**`geoserver_coverage`** publishes the raster as a layer:
+
+| Attribute       | Type   | Notes                                                                        |
+|-----------------|--------|------------------------------------------------------------------------------|
+| `workspace`     | string | Required. Changing it replaces the coverage.                                 |
+| `coveragestore` | string | Required. Changing it replaces the coverage.                                 |
+| `name`          | string | Required. Published layer name. Changing it replaces the coverage.           |
+| `native_name`   | string | Optional, default `name`. For a GeoTIFF, the file name without extension.    |
+| `title`, `abstract`, `srs`, `enabled` | | As in `geoserver_featuretype`.                                    |
+| `id`            | string | Computed, `<workspace>/<coveragestore>/<name>`.                              |
+
+Import with `terraform import geoserver_coverage.dem acme/dem/relieve`. Destroying a
+coverage also deletes its layer.
+
+In the CLI, changing a datastore's `type` is applied in place (its connection
+parameters are replaced); published layer names are unique per workspace across
+vector layers and coverages, which `validate` checks.
+
+The test and dev stacks mount the tiny fixtures in
+[`test/testdata/stores`](test/testdata/stores) (`places.gpkg`, `places.shp`,
+`dem.tif`, all EPSG:4326) at `/data/stores` inside GeoServer; the integration and
+acceptance tests use them.
 
 More in [`examples/`](examples).
 

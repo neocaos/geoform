@@ -33,6 +33,10 @@ func Marshal(d application.Desired) ([]byte, error) {
 				Name: ds.Name, Host: ds.PostGIS.Host, Port: ds.PostGIS.Port, Database: ds.PostGIS.Database,
 				Schema: ds.PostGIS.Schema, User: ds.PostGIS.User, PasswordEnv: PasswordEnvName(w.Name, ds.Name),
 			}
+			if ds.IsFile() {
+				// Los datastores de fichero no llevan conexión ni password.
+				fd = fileDatastore{Name: ds.Name, Type: string(ds.Kind()), File: ds.File}
+			}
 			for _, l := range d.Layers {
 				if l.Workspace != w.Name || l.Store != ds.Name {
 					continue
@@ -44,6 +48,23 @@ func Marshal(d application.Desired) ([]byte, error) {
 				fd.Layers = append(fd.Layers, fl)
 			}
 			fw.Datastores = append(fw.Datastores, fd)
+		}
+		for _, cs := range d.CoverageStores {
+			if cs.Workspace != w.Name {
+				continue
+			}
+			fc := fileCoverageStore{Name: cs.Name, Type: string(cs.Kind()), URL: cs.URL}
+			for _, c := range d.Coverages {
+				if c.Workspace != w.Name || c.Store != cs.Name {
+					continue
+				}
+				fcv := fileCoverage{Name: c.Name, Title: c.Title, SRS: c.SRS}
+				if c.NativeName() != c.Name {
+					fcv.NativeName = c.NativeName()
+				}
+				fc.Coverages = append(fc.Coverages, fcv)
+			}
+			fw.CoverageStores = append(fw.CoverageStores, fc)
 		}
 		// Los SLD se escriben inline (sld:); un SLD no lleva secretos.
 		for _, st := range d.Styles {

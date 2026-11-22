@@ -119,6 +119,10 @@ func (p *geoserverProvider) Resources(_ context.Context) []func() resource.Resou
 		NewLayerRuleResource,
 		NewStyleResource,
 		NewLayerGroupResource,
+		NewGeoPackageDataStoreResource,
+		NewShapefileDataStoreResource,
+		NewGeoTIFFCoverageStoreResource,
+		NewCoverageResource,
 	}
 }
 

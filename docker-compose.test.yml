@@ -29,6 +29,9 @@ services:
       SAMPLE_DATA: "false"
     ports:
       - "18080:8080"
+    volumes:
+      # Fixtures de ficheros (GeoPackage, shapefile, GeoTIFF), visibles en /data/stores.
+      - ./test/testdata/stores:/data/stores:ro
     depends_on:
       db:
         condition: service_healthy

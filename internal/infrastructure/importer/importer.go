@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/neocaos/geoform/internal/application"
+	"github.com/neocaos/geoform/internal/domain/coverage"
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
 	"github.com/neocaos/geoform/internal/domain/layergroup"
@@ -40,6 +41,16 @@ type StyleSource interface {
 	ListLayerGroups(ctx context.Context, workspace string) ([]string, error)
 	GetLayerGroup(ctx context.Context, workspace, name string) (*gs.LayerGroup, error)
 	GetLayerDefaultStyle(ctx context.Context, workspace, layer string) (*gs.StyleRef, error)
+}
+
+// CoverageSource es la parte opcional del cliente REST para importar los
+// almacenes raster (GeoTIFF) y sus coverages. Si el Source no la implementa,
+// el raster no se importa.
+type CoverageSource interface {
+	ListCoverageStores(ctx context.Context, workspace string) ([]string, error)
+	GetCoverageStore(ctx context.Context, workspace, name string) (*gs.CoverageStore, error)
+	ListCoverages(ctx context.Context, workspace, store string) ([]string, error)
+	GetCoverage(ctx context.Context, workspace, store, name string) (*gs.Coverage, error)
 }
 
 // Result es el estado importado y los avisos de lo que no se pudo representar.
@@ -124,6 +135,11 @@ func Import(ctx context.Context, src Source, only []string) (*Result, error) {
 				})
 			}
 		}
+		if cs, ok := src.(CoverageSource); ok {
+			if err := importCoverages(ctx, cs, wn, res, warn); err != nil {
+				return nil, err
+			}
+		}
 		if ss, ok := src.(StyleSource); ok {
 			if err := importStyles(ctx, ss, wn, res, warn); err != nil {
 				return nil, err
@@ -169,6 +185,11 @@ func importStyles(ctx context.Context, src StyleSource, wn string, res *Result, 
 	}
 
 	inWS := map[string]bool{}
+	for _, c := range d.Coverages {
+		if c.Workspace == wn {
+			inWS[c.Name] = true
+		}
+	}
 	for i, l := range d.Layers {
 		if l.Workspace != wn {
 			continue
@@ -233,10 +254,70 @@ func importStyles(ctx context.Context, src StyleSource, wn string, res *Result, 
 	return nil
 }
 
-// toDatastore devuelve el datastore PostGIS o el motivo por el que no se puede
-// representar. Equivale a datastore.Repository.Get, que no expone el tipo.
+// importCoverages lee los almacenes GeoTIFF de wn y sus coverages. Los
+// almacenes de otro formato y las coverages sin SRS EPSG se omiten con aviso.
+func importCoverages(ctx context.Context, src CoverageSource, wn string, res *Result, warn func(string, ...any)) error {
+	stores, err := src.ListCoverageStores(ctx, wn)
+	if err != nil {
+		return fmt.Errorf("listando coveragestores de %q: %w", wn, err)
+	}
+	sort.Strings(stores)
+	for _, sn := range stores {
+		cs, err := src.GetCoverageStore(ctx, wn, sn)
+		if err != nil {
+			return fmt.Errorf("leyendo coveragestore %s/%s: %w", wn, sn, err)
+		}
+		if cs.Type != gs.CoverageStoreTypeGeoTIFF {
+			warn("coveragestore %s/%s omitido: no es GeoTIFF (tipo %q)", wn, sn, cs.Type)
+			continue
+		}
+		st := coverage.Store{Workspace: wn, Name: sn, Type: coverage.TypeGeoTIFF, URL: cs.URL}
+		if err := st.Validate(); err != nil {
+			warn("coveragestore %s/%s omitido: %v", wn, sn, err)
+			continue
+		}
+		res.Desired.CoverageStores = append(res.Desired.CoverageStores, st)
+
+		names, err := src.ListCoverages(ctx, wn, sn)
+		if err != nil {
+			return fmt.Errorf("listando coverages de %s/%s: %w", wn, sn, err)
+		}
+		sort.Strings(names)
+		for _, cn := range names {
+			cv, err := src.GetCoverage(ctx, wn, sn, cn)
+			if err != nil {
+				return fmt.Errorf("leyendo coverage %s/%s/%s: %w", wn, sn, cn, err)
+			}
+			if !srsPattern.MatchString(cv.SRS) {
+				warn("coverage %s/%s/%s omitida: SRS %q no es EPSG:<código>", wn, sn, cn, cv.SRS)
+				continue
+			}
+			res.Desired.Coverages = append(res.Desired.Coverages, coverage.Coverage{
+				Workspace: wn, Store: sn, Name: cv.Name, Native: cv.NativeName, Title: cv.Title, SRS: cv.SRS,
+			})
+		}
+	}
+	return nil
+}
+
+// toDatastore devuelve el datastore (PostGIS, GeoPackage o shapefile) o el
+// motivo por el que no se puede representar. Equivale a datastore.Repository.Get.
 func toDatastore(ws string, ds *gs.DataStore) (datastore.Datastore, string) {
 	p := ds.ConnectionParameters
+	switch {
+	case strings.EqualFold(p["dbtype"], gs.DBTypeGeoPackage):
+		d := datastore.Datastore{Workspace: ws, Name: ds.Name, Type: datastore.TypeGeoPackage, File: p["database"]}
+		if err := d.Validate(); err != nil {
+			return datastore.Datastore{}, "GeoPackage incompleto: " + err.Error()
+		}
+		return d, ""
+	case p["dbtype"] == "" && p["url"] != "":
+		d := datastore.Datastore{Workspace: ws, Name: ds.Name, Type: datastore.TypeShapefile, File: p["url"]}
+		if err := d.Validate(); err != nil {
+			return datastore.Datastore{}, "shapefile incompleto: " + err.Error()
+		}
+		return d, ""
+	}
 	if !strings.EqualFold(p["dbtype"], "postgis") {
 		return datastore.Datastore{}, fmt.Sprintf("no es PostGIS (tipo %q)", ds.Type)
 	}

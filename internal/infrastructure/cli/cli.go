@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/neocaos/geoform/internal/application"
+	"github.com/neocaos/geoform/internal/domain/coverage"
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
 	"github.com/neocaos/geoform/internal/domain/layergroup"
@@ -59,7 +60,8 @@ func GeoServerReconciler(c Conn) *application.Reconciler {
 	).
 		WithSecurity(security.NewService(gsrepo.NewSecurityRepository(client))).
 		WithStyles(style.NewService(gsrepo.NewStyleRepository(client))).
-		WithLayerGroups(layergroup.NewService(gsrepo.NewLayerGroupRepository(client)))
+		WithLayerGroups(layergroup.NewService(gsrepo.NewLayerGroupRepository(client))).
+		WithCoverage(coverage.NewService(gsrepo.NewCoverageRepository(client)))
 }
 
 const usage = `Uso: geoform <comando> [opciones]
@@ -77,7 +79,7 @@ Opciones comunes (plan, apply):
   --password  Contraseña de la API REST    [GEOSERVER_PASSWORD]; mejor por entorno que por flag
 
 Opciones de apply:
-  --prune         Borra datastores, capas, estilos, grupos y, si hay sección security, usuarios, roles y reglas sobrantes
+  --prune         Borra datastores, almacenes raster, capas, estilos, grupos y, si hay sección security, usuarios, roles y reglas sobrantes
   --auto-approve  No pide confirmación
 
 Códigos de salida: 0 ok / plan sin cambios, 1 error, 2 plan con cambios, 3 configuración o uso inválido.

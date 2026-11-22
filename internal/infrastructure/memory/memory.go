@@ -7,6 +7,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/neocaos/geoform/internal/domain/coverage"
 	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
 	"github.com/neocaos/geoform/internal/domain/layergroup"
@@ -23,7 +24,10 @@ type Store struct {
 	Layers      map[string]layer.Layer         // clave "ws/store/name"
 	Styles      map[string]style.Style         // clave "ws/name"
 	LayerGroups map[string]layergroup.Group    // clave "ws/name"
-	Writes      []string
+	// Raster (ver coverage.go).
+	CoverageStores map[string]coverage.Store    // clave "ws/name"
+	Coverages      map[string]coverage.Coverage // clave "ws/store/name"
+	Writes         []string
 	// FailOn hace fallar la escritura cuyo registro coincida (para tests).
 	FailOn string
 }
@@ -31,11 +35,13 @@ type Store struct {
 // New crea un Store vacío.
 func New() *Store {
 	return &Store{
-		Workspaces:  map[string]workspace.Workspace{},
-		Datastores:  map[string]datastore.Datastore{},
-		Layers:      map[string]layer.Layer{},
-		Styles:      map[string]style.Style{},
-		LayerGroups: map[string]layergroup.Group{},
+		Workspaces:     map[string]workspace.Workspace{},
+		Datastores:     map[string]datastore.Datastore{},
+		Layers:         map[string]layer.Layer{},
+		Styles:         map[string]style.Style{},
+		LayerGroups:    map[string]layergroup.Group{},
+		CoverageStores: map[string]coverage.Store{},
+		Coverages:      map[string]coverage.Coverage{},
 	}
 }
 

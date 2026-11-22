@@ -10,12 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/neocaos/geoform/internal/application"
-	"github.com/neocaos/geoform/internal/domain/datastore"
 	"github.com/neocaos/geoform/internal/domain/layer"
 	"github.com/neocaos/geoform/internal/domain/layergroup"
 	"github.com/neocaos/geoform/internal/domain/style"
@@ -49,17 +47,36 @@ import (
 //	    title: Capa base          # opcional
 //	    mode: SINGLE              # opcional, SINGLE por defecto
 //	    layers: [regions, cities] # capas del workspace, en orden de dibujo
+//	      # Datastores de fichero: type geopackage | shapefile + file (URL de
+//	      # GeoServer, p. ej. file:/data/places.gpkg). No llevan host/user/...;
+//	      # en las capas, table es la tabla del gpkg o el nombre del .shp.
+//	      - name: places
+//	        type: geopackage
+//	        file: file:/data/places.gpkg
+//	        layers: [{name: places, srs: EPSG:4326}]
+//	    # Almacenes raster (GeoTIFF) y sus coverages:
+//	    coveragestores:
+//	      - name: dem
+//	        type: geotiff       # opcional, único valor soportado
+//	        url: file:/data/dem.tif
+//	        coverages:
+//	          - name: dem
+//	            native_name: dem  # opcional, por defecto el nombre
+//	            title: Relieve
+//	            srs: EPSG:4326
 type fileConfig struct {
 	Workspaces []fileWorkspace `yaml:"workspaces"`
-	Security   *fileSecurity   `yaml:"security"`
+	Security   *fileSecurity   `yaml:"security,omitempty"`
 }
 
 type fileWorkspace struct {
-	Name        string           `yaml:"name"`
-	Isolated    bool             `yaml:"isolated"`
-	Datastores  []fileDatastore  `yaml:"datastores,omitempty"`
-	Styles      []fileStyle      `yaml:"styles,omitempty"`
-	LayerGroups []fileLayerGroup `yaml:"layergroups,omitempty"`
+	Name       string          `yaml:"name"`
+	Isolated   bool            `yaml:"isolated"`
+	Datastores []fileDatastore `yaml:"datastores,omitempty"`
+	// Almacenes raster (GeoTIFF).
+	CoverageStores []fileCoverageStore `yaml:"coveragestores,omitempty"`
+	Styles         []fileStyle         `yaml:"styles,omitempty"`
+	LayerGroups    []fileLayerGroup    `yaml:"layergroups,omitempty"`
 }
 
 type fileStyle struct {
@@ -77,11 +94,13 @@ type fileLayerGroup struct {
 
 type fileDatastore struct {
 	Name        string      `yaml:"name"`
-	Host        string      `yaml:"host"`
+	Type        string      `yaml:"type,omitempty"` // postgis (por defecto), geopackage o shapefile
+	File        string      `yaml:"file,omitempty"` // solo geopackage y shapefile
+	Host        string      `yaml:"host,omitempty"`
 	Port        int         `yaml:"port,omitempty"`
-	Database    string      `yaml:"database"`
+	Database    string      `yaml:"database,omitempty"`
 	Schema      string      `yaml:"schema,omitempty"`
-	User        string      `yaml:"user"`
+	User        string      `yaml:"user,omitempty"`
 	Password    string      `yaml:"password,omitempty"`
 	PasswordEnv string      `yaml:"password_env,omitempty"`
 	Layers      []fileLayer `yaml:"layers,omitempty"`
@@ -183,22 +202,9 @@ func build(cfg fileConfig, getenv func(string) string, baseDir string) (applicat
 				}
 				dsSeen[d.Name] = true
 			}
-			for _, f := range []struct{ name, val string }{{"host", d.Host}, {"database", d.Database}, {"user", d.User}} {
-				if strings.TrimSpace(f.val) == "" {
-					bad(dp+"."+f.name, "es obligatorio")
-				}
-			}
-			if d.Port < 0 || d.Port > 65535 {
-				bad(dp+".port", "puerto %d fuera de rango (1-65535)", d.Port)
-			}
-			pass, err := resolvePassword(d, getenv)
-			if err != nil {
-				bad(dp, "%v", err)
-			}
-			out.Datastores = append(out.Datastores, datastore.Datastore{
-				Workspace: w.Name, Name: d.Name,
-				PostGIS: datastore.PostGIS{Host: d.Host, Port: d.Port, Database: d.Database, Schema: d.Schema, User: d.User, Password: pass},
-			})
+			// Si hay errores se devuelven todos y el resultado se descarta.
+			dstore, _ := buildDatastore(d, w.Name, dp, getenv, bad)
+			out.Datastores = append(out.Datastores, dstore)
 
 			lySeen := map[string]bool{}
 			for k, l := range d.Layers {
@@ -218,6 +224,7 @@ func build(cfg fileConfig, getenv func(string) string, baseDir string) (applicat
 				out.Layers = append(out.Layers, layer.Layer{Workspace: w.Name, Store: d.Name, Name: l.Name, Table: l.Table, Title: l.Title, SRS: l.SRS, Style: l.Style})
 			}
 		}
+		buildCoverageStores(w, wp, &out, checkName, bad)
 	}
 	if cfg.Security != nil {
 		sec, secErrs := buildSecurity(*cfg.Security, getenv)
