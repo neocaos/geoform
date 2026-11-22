@@ -5,6 +5,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"github.com/neocaos/geoform/internal/testenv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,9 +40,9 @@ workspaces:
 
 func TestIntegration_StoreTypesLifecycle(t *testing.T) {
 	ctx := context.Background()
-	url := itEnv("GEOSERVER_URL", "http://localhost:18080/geoserver")
-	user := itEnv("GEOSERVER_USER", "admin")
-	pass := itEnv("GEOSERVER_PASS", "geoserver")
+	url := testenv.URL()
+	user := testenv.User()
+	pass := testenv.Pass()
 	client := gs.NewClient(url, user, pass)
 
 	const ws = "geoform_stores_it"
