@@ -46,11 +46,6 @@ type Client struct {
 // Option customizes a Client.
 type Option func(*Client)
 
-// WithHTTPClient replaces the default HTTP client.
-func WithHTTPClient(hc *http.Client) Option {
-	return func(c *Client) { c.httpClient = hc }
-}
-
 // WithUserAgent sets the User-Agent header sent with every request.
 func WithUserAgent(ua string) Option {
 	return func(c *Client) { c.userAgent = ua }
