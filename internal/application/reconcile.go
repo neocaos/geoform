@@ -116,6 +116,9 @@ func (d Desired) validateStylesAndGroups(wss, lys map[string]bool) []error {
 	for _, l := range d.Layers {
 		inWS[l.Workspace+"/"+l.Name] = true
 	}
+	for _, c := range d.Coverages {
+		inWS[c.Workspace+"/"+c.Name] = true
+	}
 	grps := map[string]bool{}
 	for _, g := range d.LayerGroups {
 		k := g.Workspace + "/" + g.Name
@@ -319,6 +322,12 @@ func (r *Reconciler) Plan(ctx context.Context, want Desired, opts PlanOptions) (
 		}
 	}
 
+	// Antes de los grupos: pueden incluir coverages.
+	csExists, err := r.planCoverages(ctx, want, plan)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, g := range want.LayerGroups {
 		addr := g.Workspace + "/" + g.Name
 		cur, err := r.lg.Get(ctx, g.Workspace, g.Name)
@@ -332,11 +341,6 @@ func (r *Reconciler) Plan(ctx context.Context, want Desired, opts PlanOptions) (
 				plan.Changes = append(plan.Changes, Change{Action: Update, Kind: KindLayerGroup, Address: addr, LayerGroup: g, Details: diff})
 			}
 		}
-	}
-
-	csExists, err := r.planCoverages(ctx, want, plan)
-	if err != nil {
-		return nil, err
 	}
 
 	var rasterLayers, rasterStores []Change

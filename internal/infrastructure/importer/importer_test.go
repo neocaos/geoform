@@ -50,7 +50,7 @@ func TestImport_RoundTripYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Warnings) != 3 {
+	if len(res.Warnings) != 3 /* ws inválido + capa "odd" de cada store */ {
 		t.Errorf("avisos: %v", res.Warnings)
 	}
 	data, err := storage.Marshal(res.Desired)
@@ -68,8 +68,11 @@ func TestImport_RoundTripYAML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("el YAML generado no valida: %v\n%s", err, y)
 	}
-	if len(back.Workspaces) != 2 || len(back.Datastores) != 1 || len(back.Layers) != 2 {
+	if len(back.Workspaces) != 2 || len(back.Datastores) != 2 || len(back.Layers) != 4 {
 		t.Errorf("tras releer: %+v", back)
+	}
+	if back.Datastores[1].Type != "shapefile" || back.Datastores[1].File != "file:x.shp" {
+		t.Errorf("shapefile no importado: %+v", back.Datastores)
 	}
 	if back.Layers[0].Table != "real_table" {
 		t.Errorf("tabla nativa perdida: %+v", back.Layers)

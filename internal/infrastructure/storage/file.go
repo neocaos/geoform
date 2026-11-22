@@ -66,7 +66,7 @@ import (
 //	            srs: EPSG:4326
 type fileConfig struct {
 	Workspaces []fileWorkspace `yaml:"workspaces"`
-	Security   *fileSecurity   `yaml:"security"`
+	Security   *fileSecurity   `yaml:"security,omitempty"`
 }
 
 type fileWorkspace struct {

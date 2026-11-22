@@ -47,7 +47,7 @@ Besides PostGIS, the file can declare file-based stores (see
 
 ### `geoform import`
 
-Reads an existing GeoServer (workspaces, PostGIS datastores and their layers)
+Reads an existing GeoServer (workspaces, PostGIS/GeoPackage/shapefile datastores, GeoTIFF coverage stores and their layers)
 and writes the YAML that `plan` would see as "no changes":
 
 ```sh
@@ -57,8 +57,11 @@ export GEOFORM_DEMO_POSTGIS_PASSWORD=...   # one placeholder per datastore
 ```
 
 Passwords are never read or written: each datastore gets
-`password_env: GEOFORM_<WORKSPACE>_<DATASTORE>_PASSWORD`. Non-PostGIS stores and
-layers without an `EPSG:<code>` SRS are skipped with a warning on stderr.
+`password_env: GEOFORM_<WORKSPACE>_<DATASTORE>_PASSWORD`. GeoPackage and shapefile
+datastores (`type:` + `file:`) and GeoTIFF coverage stores with their coverages are
+imported without any connection data, so `plan --prune` never proposes deleting
+them. Other store types (e.g. ImageMosaic) and layers or coverages without an
+`EPSG:<code>` SRS are skipped with a warning on stderr.
 Without `--output` the YAML goes to stdout; an existing file needs `--force`.
 
 Workspace styles (as inline `sld:`), layer groups and each layer's default
