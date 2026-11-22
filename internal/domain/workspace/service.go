@@ -52,3 +52,14 @@ func (s *Service) Remove(ctx context.Context, name string, recurse bool) error {
 func (s *Service) Get(ctx context.Context, name string) (*Workspace, error) {
 	return s.repo.Get(ctx, name)
 }
+
+// Update aplica los cambios de w sobre un workspace existente.
+func (s *Service) Update(ctx context.Context, w Workspace) error {
+	if err := w.Validate(); err != nil {
+		return fmt.Errorf("service: workspace inválido: %w", err)
+	}
+	if err := s.repo.Update(ctx, w); err != nil {
+		return fmt.Errorf("service: error actualizando workspace %q: %w", w.Name, err)
+	}
+	return nil
+}

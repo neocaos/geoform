@@ -1,11 +1,13 @@
+// Comando geoform: CLI independiente para gestionar GeoServer desde un
+// fichero YAML (validate, plan, apply).
 package main
 
 import (
-	"fmt"
 	"os"
+
+	"github.com/neocaos/geoform/internal/infrastructure/cli"
 )
 
 func main() {
-	fmt.Println("geoform: CLI aún no implementada")
-	os.Exit(0)
+	os.Exit(cli.Run(cli.DefaultEnv(os.Args[1:])))
 }

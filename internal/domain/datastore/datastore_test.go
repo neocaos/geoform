@@ -24,6 +24,19 @@ func (f *fakeRepo) Create(_ context.Context, d datastore.Datastore) error {
 	f.items[d.Workspace+"/"+d.Name] = d
 	return nil
 }
+func (f *fakeRepo) List(_ context.Context, ws string) ([]string, error) {
+	var out []string
+	for _, d := range f.items {
+		if d.Workspace == ws {
+			out = append(out, d.Name)
+		}
+	}
+	return out, nil
+}
+func (f *fakeRepo) Update(_ context.Context, d datastore.Datastore) error {
+	f.items[d.Workspace+"/"+d.Name] = d
+	return nil
+}
 func (f *fakeRepo) Delete(_ context.Context, ws, name string, _ bool) error {
 	delete(f.items, ws+"/"+name)
 	return nil

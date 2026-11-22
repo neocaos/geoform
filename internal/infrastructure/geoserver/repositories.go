@@ -32,6 +32,14 @@ func (r *WorkspaceRepository) Create(ctx context.Context, w workspace.Workspace)
 	return r.c.CreateWorkspace(ctx, gs.Workspace{Name: w.Name, Isolated: w.Isolated})
 }
 
+func (r *WorkspaceRepository) Update(ctx context.Context, w workspace.Workspace) error {
+	err := r.c.UpdateWorkspace(ctx, w.Name, gs.Workspace{Name: w.Name, Isolated: w.Isolated})
+	if gs.IsNotFound(err) {
+		return workspace.ErrNotFound
+	}
+	return err
+}
+
 func (r *WorkspaceRepository) Delete(ctx context.Context, name string, recurse bool) error {
 	err := r.c.DeleteWorkspace(ctx, name, recurse)
 	if gs.IsNotFound(err) {
@@ -68,8 +76,16 @@ func (r *DatastoreRepository) Get(ctx context.Context, ws, name string) (*datast
 	}, nil
 }
 
-func (r *DatastoreRepository) Create(ctx context.Context, d datastore.Datastore) error {
-	p := d.PostGIS
+func (r *DatastoreRepository) List(ctx context.Context, ws string) ([]string, error) {
+	names, err := r.c.ListDataStores(ctx, ws)
+	if gs.IsNotFound(err) {
+		return nil, nil
+	}
+	return names, err
+}
+
+// postgisParams traduce los parámetros de dominio a los de GeoServer.
+func postgisParams(p datastore.PostGIS) map[string]string {
 	port := p.Port
 	if port == 0 {
 		port = 5432
@@ -78,21 +94,46 @@ func (r *DatastoreRepository) Create(ctx context.Context, d datastore.Datastore)
 	if schema == "" {
 		schema = "public"
 	}
+	return map[string]string{
+		"dbtype":              "postgis",
+		"host":                p.Host,
+		"port":                strconv.Itoa(port),
+		"database":            p.Database,
+		"schema":              schema,
+		"user":                p.User,
+		"passwd":              p.Password,
+		"Expose primary keys": "true",
+	}
+}
+
+func (r *DatastoreRepository) Create(ctx context.Context, d datastore.Datastore) error {
 	return r.c.CreateDataStore(ctx, d.Workspace, gs.DataStore{
-		Name:    d.Name,
-		Type:    "PostGIS",
-		Enabled: true,
-		ConnectionParameters: map[string]string{
-			"dbtype":              "postgis",
-			"host":                p.Host,
-			"port":                strconv.Itoa(port),
-			"database":            p.Database,
-			"schema":              schema,
-			"user":                p.User,
-			"passwd":              p.Password,
-			"Expose primary keys": "true",
-		},
+		Name:                 d.Name,
+		Type:                 "PostGIS",
+		Enabled:              true,
+		ConnectionParameters: postgisParams(d.PostGIS),
 	})
+}
+
+// Update conserva los parámetros que Geoform no gestiona (pools, etc.) y
+// sobrescribe los gestionados.
+func (r *DatastoreRepository) Update(ctx context.Context, d datastore.Datastore) error {
+	cur, err := r.c.GetDataStore(ctx, d.Workspace, d.Name)
+	if gs.IsNotFound(err) {
+		return datastore.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	params := gs.ConnectionParameters{}
+	for k, v := range cur.ConnectionParameters {
+		params[k] = v
+	}
+	for k, v := range postgisParams(d.PostGIS) {
+		params[k] = v
+	}
+	cur.ConnectionParameters = params
+	return r.c.UpdateDataStore(ctx, d.Workspace, d.Name, *cur)
 }
 
 func (r *DatastoreRepository) Delete(ctx context.Context, ws, name string, recurse bool) error {
@@ -117,6 +158,31 @@ func (r *LayerRepository) Get(ctx context.Context, ws, store, name string) (*lay
 		return nil, err
 	}
 	return &layer.Layer{Workspace: ws, Store: store, Name: ft.Name, Table: ft.NativeName, Title: ft.Title, SRS: ft.SRS}, nil
+}
+
+func (r *LayerRepository) List(ctx context.Context, ws, store string) ([]string, error) {
+	names, err := r.c.ListFeatureTypes(ctx, ws, store)
+	if gs.IsNotFound(err) {
+		return nil, nil
+	}
+	return names, err
+}
+
+// Update modifica solo los campos gestionados, conservando el resto
+// (abstract, bounding boxes, etc.).
+func (r *LayerRepository) Update(ctx context.Context, l layer.Layer) error {
+	ft, err := r.c.GetFeatureType(ctx, l.Workspace, l.Store, l.Name)
+	if gs.IsNotFound(err) {
+		return layer.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	ft.NativeName, ft.SRS = l.NativeTable(), l.SRS
+	if l.Title != "" {
+		ft.Title = l.Title
+	}
+	return r.c.UpdateFeatureType(ctx, l.Workspace, l.Store, l.Name, *ft, false)
 }
 
 func (r *LayerRepository) Create(ctx context.Context, l layer.Layer) error {

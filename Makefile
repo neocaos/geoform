@@ -1,4 +1,4 @@
-.PHONY: build install fmt vet test test-integration stack-up stack-down testacc testacc-all up down
+.PHONY: build build-cli install fmt vet test test-integration stack-up stack-down testacc testacc-all up down
 
 BINARY       := terraform-provider-geoserver
 COMPOSE_TEST  = docker compose -f docker-compose.test.yml
@@ -13,6 +13,10 @@ export GEOSERVER_PORT POSTGIS_PORT GEOSERVER_VERSION
 
 build:
 	go build -o $(BINARY) .
+
+# CLI independiente (geoform validate|plan|apply).
+build-cli:
+	go build -o geoform ./cmd/geoform
 
 # Installs into $GOBIN (or $GOPATH/bin) for use with a dev_overrides block.
 install:

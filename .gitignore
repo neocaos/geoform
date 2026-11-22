@@ -40,3 +40,4 @@ go.work.sum
 
 # Local test output
 test.log
+/geoform

@@ -45,7 +45,9 @@ func (d Datastore) Validate() error {
 // Repository abstrae la persistencia de Datastore (implementada en infrastructure).
 type Repository interface {
 	Get(ctx context.Context, workspace, name string) (*Datastore, error)
+	List(ctx context.Context, workspace string) ([]string, error)
 	Create(ctx context.Context, d Datastore) error
+	Update(ctx context.Context, d Datastore) error
 	Delete(ctx context.Context, workspace, name string, recurse bool) error
 }
 
@@ -81,6 +83,22 @@ func (s *Service) Get(ctx context.Context, workspace, name string) (*Datastore, 
 func (s *Service) Remove(ctx context.Context, workspace, name string, recurse bool) error {
 	if err := s.repo.Delete(ctx, workspace, name, recurse); err != nil {
 		return fmt.Errorf("service: error eliminando datastore %q: %w", name, err)
+	}
+	return nil
+}
+
+// List devuelve los nombres de los datastores de un workspace.
+func (s *Service) List(ctx context.Context, workspace string) ([]string, error) {
+	return s.repo.List(ctx, workspace)
+}
+
+// Update aplica los cambios de d sobre un datastore existente.
+func (s *Service) Update(ctx context.Context, d Datastore) error {
+	if err := d.Validate(); err != nil {
+		return fmt.Errorf("service: datastore inválido: %w", err)
+	}
+	if err := s.repo.Update(ctx, d); err != nil {
+		return fmt.Errorf("service: error actualizando datastore %q: %w", d.Name, err)
 	}
 	return nil
 }

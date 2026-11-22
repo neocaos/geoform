@@ -150,3 +150,46 @@ func (c *Client) ListAvailableFeatureTypes(ctx context.Context, workspace, name 
 	}
 	return names, nil
 }
+
+// ListDataStores returns the names of the data stores in workspace. It returns
+// an error satisfying IsNotFound if the workspace does not exist.
+func (c *Client) ListDataStores(ctx context.Context, workspace string) ([]string, error) {
+	var resp struct {
+		DataStores json.RawMessage `json:"dataStores"`
+	}
+	if err := c.do(ctx, http.MethodGet, dataStoresPath(workspace)+".json", nil, &resp, http.StatusOK); err != nil {
+		return nil, err
+	}
+	return decodeNameList(resp.DataStores, "dataStore")
+}
+
+// decodeNameList extrae los nombres de un listado de GeoServer. Un listado
+// vacío llega como "" en lugar de un objeto, y uno con un solo elemento puede
+// llegar como objeto en lugar de array.
+func decodeNameList(raw json.RawMessage, key string) ([]string, error) {
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil, nil
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, err
+	}
+	items := obj[key]
+	if len(items) == 0 {
+		return nil, nil
+	}
+	if items[0] == '{' {
+		items = append(append([]byte("["), items...), ']')
+	}
+	var entries []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(items, &entries); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name)
+	}
+	return names, nil
+}
