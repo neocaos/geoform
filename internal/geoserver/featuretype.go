@@ -98,3 +98,16 @@ func (c *Client) LayerExists(ctx context.Context, workspace, name string) (bool,
 	}
 	return err == nil, err
 }
+
+// ListFeatureTypes returns the names of the feature types published from a
+// data store. It returns an error satisfying IsNotFound if the store or its
+// workspace does not exist.
+func (c *Client) ListFeatureTypes(ctx context.Context, workspace, store string) ([]string, error) {
+	var resp struct {
+		FeatureTypes json.RawMessage `json:"featureTypes"`
+	}
+	if err := c.do(ctx, http.MethodGet, featureTypesPath(workspace, store)+".json", nil, &resp, http.StatusOK); err != nil {
+		return nil, err
+	}
+	return decodeNameList(resp.FeatureTypes, "featureType")
+}

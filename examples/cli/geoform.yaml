@@ -1,0 +1,28 @@
+# Ejemplo de configuración para la CLI `geoform`.
+# Contra el stack de desarrollo:
+#   make up
+#   export PG_PASSWORD=geopassword GEOSERVER_PASSWORD=geoserver
+#   geoform plan  --file examples/cli/geoform.yaml
+#   geoform apply --file examples/cli/geoform.yaml
+#
+# Los secretos nunca van en el fichero: password_env nombra la variable de entorno.
+workspaces:
+  - name: demo
+    datastores:
+      - name: postgis
+        host: db            # visto desde GeoServer (nombre del servicio en compose)
+        port: 5432
+        database: geoform
+        schema: geodata
+        user: geouser
+        password_env: PG_PASSWORD
+        layers:
+          - name: cities
+            title: Ciudades
+            srs: EPSG:4326
+          - name: roads
+            title: Carreteras
+            srs: EPSG:4326
+          - name: regions
+            title: Regiones
+            srs: EPSG:4326

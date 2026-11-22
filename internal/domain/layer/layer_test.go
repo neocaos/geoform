@@ -24,6 +24,19 @@ func (f *fakeRepo) Create(_ context.Context, l layer.Layer) error {
 	f.items[l.Workspace+"/"+l.Store+"/"+l.Name] = l
 	return nil
 }
+func (f *fakeRepo) List(_ context.Context, ws, st string) ([]string, error) {
+	var out []string
+	for _, l := range f.items {
+		if l.Workspace == ws && l.Store == st {
+			out = append(out, l.Name)
+		}
+	}
+	return out, nil
+}
+func (f *fakeRepo) Update(_ context.Context, l layer.Layer) error {
+	f.items[l.Workspace+"/"+l.Store+"/"+l.Name] = l
+	return nil
+}
 func (f *fakeRepo) Delete(_ context.Context, ws, st, n string) error {
 	delete(f.items, ws+"/"+st+"/"+n)
 	return nil

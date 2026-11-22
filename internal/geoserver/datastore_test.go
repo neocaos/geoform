@@ -150,3 +150,41 @@ func TestClient_ListAvailableFeatureTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestClient_ListDataStores(t *testing.T) {
+	bodies := map[string][]string{
+		`{"dataStores":""}`: nil,
+		`{"dataStores":{"dataStore":[{"name":"a","href":"x"}]}}`:                         {"a"},
+		`{"dataStores":{"dataStore":[{"name":"a","href":"x"},{"name":"b","href":"y"}]}}`: {"a", "b"},
+	}
+	for body, want := range bodies {
+		client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet || r.URL.Path != "/geoserver/rest/workspaces/acme/datastores.json" {
+				t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			}
+			io.WriteString(w, body)
+		})
+		got, err := client.ListDataStores(context.Background(), "acme")
+		if err != nil || len(got) != len(want) {
+			t.Fatalf("body %s: got %v (%v), want %v", body, got, err, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("body %s: got %v, want %v", body, got, want)
+			}
+		}
+	}
+}
+
+func TestClient_ListFeatureTypes(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/geoserver/rest/workspaces/acme/datastores/roads/featuretypes.json" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		io.WriteString(w, `{"featureTypes":{"featureType":[{"name":"a"},{"name":"b"}]}}`)
+	})
+	got, err := client.ListFeatureTypes(context.Background(), "acme", "roads")
+	if err != nil || len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("got %v (%v)", got, err)
+	}
+}

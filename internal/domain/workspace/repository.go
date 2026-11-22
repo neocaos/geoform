@@ -14,5 +14,6 @@ var ErrNotFound = errors.New("workspace: no encontrado")
 type Repository interface {
 	Get(ctx context.Context, name string) (*Workspace, error)
 	Create(ctx context.Context, w Workspace) error
+	Update(ctx context.Context, w Workspace) error
 	Delete(ctx context.Context, name string, recurse bool) error
 }

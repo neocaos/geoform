@@ -44,7 +44,9 @@ func (l Layer) Validate() error {
 // Repository abstrae la persistencia de Layer (implementada en infrastructure).
 type Repository interface {
 	Get(ctx context.Context, workspace, store, name string) (*Layer, error)
+	List(ctx context.Context, workspace, store string) ([]string, error)
 	Create(ctx context.Context, l Layer) error
+	Update(ctx context.Context, l Layer) error
 	Delete(ctx context.Context, workspace, store, name string) error
 }
 
@@ -80,6 +82,22 @@ func (s *Service) Get(ctx context.Context, workspace, store, name string) (*Laye
 func (s *Service) Remove(ctx context.Context, workspace, store, name string) error {
 	if err := s.repo.Delete(ctx, workspace, store, name); err != nil {
 		return fmt.Errorf("service: error eliminando capa %q: %w", name, err)
+	}
+	return nil
+}
+
+// List devuelve los nombres de las capas publicadas desde un datastore.
+func (s *Service) List(ctx context.Context, workspace, store string) ([]string, error) {
+	return s.repo.List(ctx, workspace, store)
+}
+
+// Update aplica los cambios de l sobre una capa existente.
+func (s *Service) Update(ctx context.Context, l Layer) error {
+	if err := l.Validate(); err != nil {
+		return fmt.Errorf("service: capa inválida: %w", err)
+	}
+	if err := s.repo.Update(ctx, l); err != nil {
+		return fmt.Errorf("service: error actualizando capa %q: %w", l.Name, err)
 	}
 	return nil
 }

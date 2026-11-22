@@ -7,7 +7,48 @@ Terraform.
 > Status: early development. Available: `geoserver_workspace`, `geoserver_postgis_datastore`,
 > `geoserver_featuretype`.
 
-## Usage
+## `geoform` CLI
+
+Standalone declarative CLI: describe workspaces, PostGIS datastores and layers in
+YAML, preview the diff and reconcile GeoServer idempotently. It shares the REST
+client and domain services with the Terraform provider.
+
+```sh
+make build-cli
+export PG_PASSWORD=...  GEOSERVER_PASSWORD=...
+./geoform validate --file examples/cli/geoform.yaml   # offline check
+./geoform plan     --file examples/cli/geoform.yaml   # no writes
+./geoform apply    --file examples/cli/geoform.yaml   # asks for confirmation
+```
+
+See [`examples/cli/geoform.yaml`](examples/cli/geoform.yaml) for the file format.
+Unknown keys and invalid values are reported all at once with their path
+(e.g. `workspaces[0].datastores[1].port`).
+
+| Flag / env                              | Applies to     | Description                                                              |
+|-----------------------------------------|----------------|--------------------------------------------------------------------------|
+| `--file`                                | all            | YAML file (default `geoform.yaml`).                                      |
+| `--server` / `GEOSERVER_URL`            | plan, apply    | GeoServer URL (default `http://localhost:8080/geoserver`).               |
+| `--user` / `GEOSERVER_USERNAME`         | plan, apply    | REST user (default `admin`).                                             |
+| `--password` / `GEOSERVER_PASSWORD`     | plan, apply    | REST password; prefer the env var (flags show up in `ps`).               |
+| `--prune`                               | plan, apply    | Also delete datastores/layers missing from the file (off by default).    |
+| `--auto-approve`                        | apply          | Skip the confirmation prompt.                                            |
+| `--check-env`                           | validate       | Fail if a `password_env` variable is unset.                              |
+
+Datastore passwords are never written in the file: use `password_env: VAR`.
+
+Behaviour notes:
+
+- `--prune` only touches workspaces declared in the file (datastores and layers
+  not listed are deleted); workspaces themselves are never deleted.
+- Changes to host, port, database, schema, user, table, SRS, title and
+  `isolated` are detected and updated in place. A layer with no `title` leaves
+  GeoServer's title unmanaged. Password-only changes are not detected
+  (GeoServer never returns it).
+- Exit codes: `0` ok / plan without changes, `1` runtime error or apply
+  declined, `2` plan with pending changes, `3` invalid config or usage.
+
+## Terraform provider usage
 
 ```hcl
 terraform {
