@@ -190,6 +190,8 @@ examples/               example configurations
 ```
 
 
+Ver [docs/release.md](docs/release.md) para el proceso de releases.
+
 ## Stack de desarrollo (Kartoza + PostGIS)
 
 Un único `docker-compose.yml`: GeoServer ([`kartoza/geoserver`](https://hub.docker.com/r/kartoza/geoserver),
